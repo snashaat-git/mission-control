@@ -1,8 +1,9 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { X, Plus, Search, Copy, Sparkles, Bot, Trash2, Edit2, Check, Library } from 'lucide-react';
+import { X, Plus, Search, Copy, Sparkles, Bot, Trash2, Edit2, Check, Library, Wand2 } from 'lucide-react';
 import { useMissionControl } from '@/lib/store';
+import { PromptEditor } from './PromptEditor';
 import type { Prompt, Agent } from '@/lib/types';
 
 interface PromptsLibraryProps {
@@ -223,173 +224,28 @@ export function PromptsLibrary({ isOpen, onClose, onSelectPrompt, selectMode }: 
         </div>
       </div>
 
-      {/* Create/Edit Modal */}
+      {/* Create/Edit Modal - Now uses PromptEditor with analysis/enhancement */}
       {(showCreateModal || editingPrompt) && (
-        <PromptModal
+        <PromptEditor
           prompt={editingPrompt}
           agents={agents}
           onClose={() => {
             setShowCreateModal(false);
             setEditingPrompt(null);
           }}
-          onSave={() => {
-            loadPrompts();
+          onSave={(savedPrompt) => {
+            if (editingPrompt) {
+              // Update in list
+              setPrompts(prompts.map(p => p.id === savedPrompt.id ? savedPrompt : p));
+            } else {
+              // Add to list
+              setPrompts([savedPrompt, ...prompts]);
+            }
             setShowCreateModal(false);
             setEditingPrompt(null);
           }}
         />
       )}
-    </div>
-  );
-}
-
-// Prompt Create/Edit Modal
-interface PromptModalProps {
-  prompt: Prompt | null;
-  agents: Agent[];
-  onClose: () => void;
-  onSave: () => void;
-}
-
-function PromptModal({ prompt, agents, onClose, onSave }: PromptModalProps) {
-  const [form, setForm] = useState({
-    title: prompt?.title || '',
-    content: prompt?.content || '',
-    description: prompt?.description || '',
-    category: prompt?.category || 'general',
-    agent_id: prompt?.agent_id || '',
-    is_template: prompt?.is_template || false,
-  });
-  const [isSubmitting, setIsSubmitting] = useState(false);
-
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setIsSubmitting(true);
-
-    try {
-      const url = prompt ? `/api/prompts/${prompt.id}` : '/api/prompts';
-      const method = prompt ? 'PUT' : 'POST';
-
-      const res = await fetch(url, {
-        method,
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(form),
-      });
-
-      if (res.ok) {
-        onSave();
-      }
-    } catch (error) {
-      console.error('Failed to save prompt:', error);
-    } finally {
-      setIsSubmitting(false);
-    }
-  };
-
-  return (
-    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-[60] p-4">
-      <div className="bg-mc-bg-secondary border border-mc-border rounded-lg w-full max-w-2xl max-h-[90vh] flex flex-col">
-        <div className="flex items-center justify-between p-4 border-b border-mc-border">
-          <h3 className="font-semibold">{prompt ? 'Edit Prompt' : 'New Prompt'}</h3>
-          <button onClick={onClose} className="p-1 hover:bg-mc-bg-tertiary rounded">
-            <X className="w-5 h-5" />
-          </button>
-        </div>
-
-        <form onSubmit={handleSubmit} className="p-4 space-y-4 overflow-y-auto">
-          <div>
-            <label className="block text-sm font-medium mb-1">Title</label>
-            <input
-              type="text"
-              value={form.title}
-              onChange={(e) => setForm({ ...form, title: e.target.value })}
-              required
-              className="w-full bg-mc-bg border border-mc-border rounded px-3 py-2 text-sm focus:outline-none focus:border-mc-accent"
-              placeholder="e.g., Landing Page Generator"
-            />
-          </div>
-
-          <div>
-            <label className="block text-sm font-medium mb-1">Category</label>
-            <input
-              type="text"
-              value={form.category}
-              onChange={(e) => setForm({ ...form, category: e.target.value })}
-              className="w-full bg-mc-bg border border-mc-border rounded px-3 py-2 text-sm focus:outline-none focus:border-mc-accent"
-              placeholder="e.g., coding, writing, analysis"
-            />
-          </div>
-
-          <div>
-            <label className="block text-sm font-medium mb-1">Assigned Agent (optional)</label>
-            <select
-              value={form.agent_id}
-              onChange={(e) => setForm({ ...form, agent_id: e.target.value })}
-              className="w-full bg-mc-bg border border-mc-border rounded px-3 py-2 text-sm focus:outline-none focus:border-mc-accent"
-            >
-              <option value="">Any Agent</option>
-              {agents.map(agent => (
-                <option key={agent.id} value={agent.id}>
-                  {agent.avatar_emoji} {agent.name}
-                </option>
-              ))}
-            </select>
-          </div>
-
-          <div>
-            <label className="block text-sm font-medium mb-1">Description (optional)</label>
-            <input
-              type="text"
-              value={form.description}
-              onChange={(e) => setForm({ ...form, description: e.target.value })}
-              className="w-full bg-mc-bg border border-mc-border rounded px-3 py-2 text-sm focus:outline-none focus:border-mc-accent"
-              placeholder="Brief description of what this prompt does"
-            />
-          </div>
-
-          <div>
-            <label className="block text-sm font-medium mb-1">Prompt Content</label>
-            <textarea
-              value={form.content}
-              onChange={(e) => setForm({ ...form, content: e.target.value })}
-              required
-              rows={8}
-              className="w-full bg-mc-bg border border-mc-border rounded px-3 py-2 text-sm focus:outline-none focus:border-mc-accent resize-none font-mono"
-              placeholder="Enter your prompt here... Use {{variable}} for dynamic values"
-            />
-          </div>
-
-          <div className="flex items-center gap-2">
-            <input
-              type="checkbox"
-              id="is_template"
-              checked={form.is_template}
-              onChange={(e) => setForm({ ...form, is_template: e.target.checked })}
-              className="w-4 h-4 rounded border-mc-border"
-            />
-            <label htmlFor="is_template" className="text-sm cursor-pointer">
-              Mark as reusable template
-            </label>
-          </div>
-
-          <div className="flex justify-end gap-2 pt-2">
-            <button
-              type="button"
-              onClick={onClose}
-              className="px-4 py-2 text-sm text-mc-text-secondary hover:text-mc-text"
-            >
-              Cancel
-            </button>
-            <button
-              type="submit"
-              disabled={isSubmitting}
-              className="px-4 py-2 bg-mc-accent text-mc-bg rounded text-sm font-medium hover:bg-mc-accent/90 disabled:opacity-50"
-            >
-              {isSubmitting ? 'Saving...' : 'Save Prompt'}
-            </button>
-          </div>
-        </form>
-      </div>
     </div>
   );
 }
