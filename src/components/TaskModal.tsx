@@ -1,12 +1,13 @@
 'use client';
 
 import { useState } from 'react';
-import { X, Save, Trash2, Activity, Package, Bot, FolderOpen, Scan, ArrowRight } from 'lucide-react';
+import { X, Save, Trash2, Activity, Package, Bot, FolderOpen, Scan, FileText, Sparkles } from 'lucide-react';
 import { useMissionControl } from '@/lib/store';
 import { ActivityLog } from './ActivityLog';
 import { DeliverablesList } from './DeliverablesList';
 import { SessionsList } from './SessionsList';
-import type { Task, TaskPriority, TaskStatus } from '@/lib/types';
+import { PromptsLibrary } from './PromptsLibrary';
+import type { Task, TaskPriority, TaskStatus, Prompt } from '@/lib/types';
 
 type TabType = 'overview' | 'activity' | 'deliverables' | 'sessions';
 
@@ -19,6 +20,7 @@ export function TaskModal({ task, onClose }: TaskModalProps) {
   const { agents, addTask, updateTask, addEvent } = useMissionControl();
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [activeTab, setActiveTab] = useState<TabType>('overview');
+  const [showPromptsLibrary, setShowPromptsLibrary] = useState(false);
 
   const [form, setForm] = useState({
     title: task?.title || '',
@@ -92,6 +94,58 @@ export function TaskModal({ task, onClose }: TaskModalProps) {
     }
   };
 
+  const handleSelectPrompt = (selectedPrompt: Prompt) => {
+    // Extract variables from prompt content
+    const variableRegex = /\{\{(\w+)\}\}/g;
+    const variables: string[] = [];
+    let match;
+    while ((match = variableRegex.exec(selectedPrompt.content)) !== null) {
+      if (!variables.includes(match[1])) {
+        variables.push(match[1]);
+      }
+    }
+
+    if (variables.length > 0) {
+      // Ask for variable values
+      const values: Record<string, string> = {};
+      for (const v of variables) {
+        const defaultValue = v.includes('dir') || v.includes('path') || v.includes('output')
+          ? `~/openclaw/workspace/projects/${selectedPrompt.title.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '')}`
+          : '';
+        const userValue = window.prompt(`Enter value for "{{${v}}}":`, defaultValue);
+        if (userValue === null) return; // User cancelled
+        values[v] = userValue;
+      }
+
+      // Replace variables in content
+      let filledContent = selectedPrompt.content;
+      for (const [key, value] of Object.entries(values)) {
+        filledContent = filledContent.replace(new RegExp(`\\{\\{${key}\\}\\}`, 'g'), value);
+      }
+
+      // Also try to get output_dir from values
+      const outputDir = values['output_dir'] || values['outputDir'] || values['outputdir'] || 
+                       values['output_path'] || values['path'] || '';
+
+      setForm({
+        ...form,
+        title: selectedPrompt.title,
+        description: filledContent,
+        output_dir: outputDir,
+        use_prompt_dir: !outputDir,
+      });
+    } else {
+      // No variables, use as-is
+      setForm({
+        ...form,
+        title: selectedPrompt.title,
+        description: selectedPrompt.content,
+      });
+    }
+
+    setShowPromptsLibrary(false);
+  };
+
   const statuses: TaskStatus[] = ['inbox', 'assigned', 'in_progress', 'testing', 'review', 'done'];
   const priorities: TaskPriority[] = ['low', 'normal', 'high', 'urgent'];
 
@@ -110,12 +164,23 @@ export function TaskModal({ task, onClose }: TaskModalProps) {
           <h2 className="text-lg font-semibold">
             {task ? task.title : 'Create New Task'}
           </h2>
-          <button
-            onClick={onClose}
-            className="p-1 hover:bg-mc-bg-tertiary rounded"
-          >
-            <X className="w-5 h-5" />
-          </button>
+          <div className="flex items-center gap-2">
+            {!task && (
+              <button
+                onClick={() => setShowPromptsLibrary(true)}
+                className="flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium text-mc-accent bg-mc-accent/10 hover:bg-mc-accent/20 rounded-md transition-colors"
+              >
+                <Sparkles className="w-4 h-4" />
+                Use Prompt
+              </button>
+            )}
+            <button
+              onClick={onClose}
+              className="p-1 hover:bg-mc-bg-tertiary rounded"
+            >
+              <X className="w-5 h-5" />
+            </button>
+          </div>
         </div>
 
         {/* Tabs - only show for existing tasks */}
@@ -374,6 +439,14 @@ export function TaskModal({ task, onClose }: TaskModalProps) {
             </div>
           </div>
         )}
+
+        {/* Prompts Library Modal */}
+        <PromptsLibrary
+          isOpen={showPromptsLibrary}
+          onClose={() => setShowPromptsLibrary(false)}
+          onSelectPrompt={handleSelectPrompt}
+          selectMode={true}
+        />
       </div>
     </div>
   );
