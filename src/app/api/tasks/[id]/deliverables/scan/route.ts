@@ -2,10 +2,19 @@ import { NextResponse } from 'next/server';
 import { v4 as uuidv4 } from 'uuid';
 import fs from 'fs';
 import path from 'path';
+import os from 'os';
 import { queryOne, queryAll, run } from '@/lib/db';
 import { getProjectsPath } from '@/lib/config';
 import { broadcast } from '@/lib/events';
 import type { Task, TaskDeliverable } from '@/lib/types';
+
+// Expand tilde (~) to home directory
+function expandPath(p: string): string {
+  if (p.startsWith('~/') || p === '~') {
+    return p.replace('~', os.homedir());
+  }
+  return p;
+}
 
 interface RouteParams {
   params: Promise<{ id: string }>;
@@ -24,12 +33,15 @@ export async function POST(_req: Request, { params }: RouteParams) {
     const projectsPath = getProjectsPath();
 
     // Prefer persisted output_dir (robust against title edits)
-    const taskProjectDir = (task as any).output_dir
+    const rawOutputDir = (task as any).output_dir
       ? String((task as any).output_dir)
       : `${projectsPath}/${task.title
           .toLowerCase()
           .replace(/[^a-z0-9]+/g, '-')
           .replace(/^-|-$/g, '')}`;
+    
+    // Expand tilde to home directory
+    const taskProjectDir = expandPath(rawOutputDir);
 
     if (!fs.existsSync(taskProjectDir) || !fs.statSync(taskProjectDir).isDirectory()) {
       return NextResponse.json({ error: 'Output directory not found', dir: taskProjectDir }, { status: 404 });

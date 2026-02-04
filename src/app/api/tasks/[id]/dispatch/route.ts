@@ -1,10 +1,19 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { v4 as uuidv4 } from 'uuid';
+import os from 'os';
 import { queryOne, run, transaction } from '@/lib/db';
 import { getOpenClawClient } from '@/lib/openclaw/client';
 import { broadcast } from '@/lib/events';
 import { getProjectsPath, getMissionControlUrl } from '@/lib/config';
 import type { Task, Agent, OpenClawSession } from '@/lib/types';
+
+// Expand tilde (~) to home directory
+function expandPath(p: string): string {
+  if (p.startsWith('~/') || p === '~') {
+    return p.replace('~', os.homedir());
+  }
+  return p;
+}
 
 interface RouteParams {
   params: Promise<{ id: string }>;
@@ -108,10 +117,12 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
       urgent: '🔴'
     }[task.priority] || '⚪';
 
-    // Get project path for deliverables
-    const projectsPath = getProjectsPath();
+    // Get project path for deliverables (expand tilde to absolute path)
+    const projectsPath = expandPath(getProjectsPath());
     const projectDir = task.title.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
-    const taskProjectDir = task.output_dir || `${projectsPath}/${projectDir}`;
+    const taskProjectDir = task.output_dir 
+      ? expandPath(task.output_dir)  // Expand any existing tilde
+      : `${projectsPath}/${projectDir}`;
     const missionControlUrl = getMissionControlUrl();
 
     // Persist the output dir on the task
