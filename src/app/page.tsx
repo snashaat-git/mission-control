@@ -26,17 +26,32 @@ export default function MissionControlPage() {
   } = useMissionControl();
 
   const [showChat, setShowChat] = useState(false);
-  const [showLiveFeed, setShowLiveFeed] = useState(false); // Collapsed by default
+  const [showLiveFeed, setShowLiveFeed] = useState(false);
+  const [sidebarWidth, setSidebarWidth] = useState(18); // percentage
+  const [liveFeedWidth, setLiveFeedWidth] = useState(20); // percentage
+  const [isResizing, setIsResizing] = useState(false);
 
   // Connect to SSE for real-time updates
   useSSE();
+
+  // Handle resize
+  useEffect(() => {
+    const handleResize = () => {
+      // On small screens, auto-collapse panels
+      if (window.innerWidth < 768) {
+        setShowLiveFeed(false);
+      }
+    };
+    
+    window.addEventListener('resize', handleResize);
+    return () => window.removeEventListener('resize', handleResize);
+  }, []);
 
   // Initial data load
   useEffect(() => {
     async function loadData() {
       try {
         debug.api('Loading initial data...');
-        // Fetch all data in parallel
         const [agentsRes, tasksRes, conversationsRes, eventsRes] = await Promise.all([
           fetch('/api/agents'),
           fetch('/api/tasks'),
@@ -59,17 +74,11 @@ export default function MissionControlPage() {
       }
     }
 
-    // Check OpenClaw connection separately (non-blocking)
     async function checkOpenClaw() {
       try {
-        const controller = new AbortController();
-        const timeoutId = setTimeout(() => controller.abort(), 5000); // 5s timeout
-
-        const openclawRes = await fetch('/api/openclaw/status', { signal: controller.signal });
-        clearTimeout(timeoutId);
-
-        if (openclawRes.ok) {
-          const status = await openclawRes.json();
+        const res = await fetch('/api/openclaw/status');
+        if (res.ok) {
+          const status = await res.json();
           setIsOnline(status.connected);
         }
       } catch {
@@ -78,50 +87,35 @@ export default function MissionControlPage() {
     }
 
     loadData();
-    checkOpenClaw(); // Run in parallel, don't block page load
+    checkOpenClaw();
 
-    // Poll for events every 5 seconds
     const eventPoll = setInterval(async () => {
       try {
         const res = await fetch('/api/events?limit=20');
-        if (res.ok) {
-          setEvents(await res.json());
-        }
+        if (res.ok) setEvents(await res.json());
       } catch (error) {
         console.error('Failed to poll events:', error);
       }
     }, 5000);
 
-    // Poll tasks as SSE fallback (every 10 seconds)
     const taskPoll = setInterval(async () => {
       try {
         const res = await fetch('/api/tasks');
         if (res.ok) {
           const newTasks: Task[] = await res.json();
-          // Get current tasks from store
           const currentTasks = useMissionControl.getState().tasks;
-
-          // Check if there are any changes
           const hasChanges = newTasks.length !== currentTasks.length ||
             newTasks.some((t) => {
               const current = currentTasks.find(ct => ct.id === t.id);
               return !current || current.status !== t.status;
             });
-
-          if (hasChanges) {
-            debug.api('[FALLBACK] Task changes detected, updating store', {
-              oldCount: currentTasks.length,
-              newCount: newTasks.length
-            });
-            setTasks(newTasks);
-          }
+          if (hasChanges) setTasks(newTasks);
         }
       } catch (error) {
         console.error('Failed to poll tasks:', error);
       }
     }, 10000);
 
-    // Check OpenClaw connection every 30 seconds
     const connectionCheck = setInterval(async () => {
       try {
         const res = await fetch('/api/openclaw/status');
@@ -156,16 +150,25 @@ export default function MissionControlPage() {
     <div className="h-screen flex flex-col bg-mc-bg overflow-hidden">
       <Header />
 
-      <div className="flex-1 flex overflow-hidden">
-        {/* Agents Sidebar - Responsive: full width mobile, fixed width desktop */}
-        <div className="w-full md:w-56 lg:w-64 flex-shrink-0">
+      {/* CSS Grid Layout - truly responsive */}
+      <div 
+        className="flex-1 grid overflow-hidden"
+        style={{
+          gridTemplateColumns: showLiveFeed 
+            ? `${sidebarWidth}% 1fr ${liveFeedWidth}%`
+            : `${sidebarWidth}% 1fr`,
+          transition: isResizing ? 'none' : 'grid-template-columns 0.2s ease'
+        }}
+      >
+        {/* Agents Sidebar - scales with browser width */}
+        <div className="min-w-[200px] max-w-[400px] bg-mc-bg-secondary border-r border-mc-border flex flex-col overflow-hidden">
           <AgentsSidebar />
         </div>
 
-        {/* Main Content Area - Flexible, fills remaining space */}
-        <div className="flex-1 flex flex-col min-w-0">
-          {/* Toolbar with toggle buttons */}
-          <div className="flex items-center justify-end gap-2 p-2 border-b border-mc-border overflow-x-auto">
+        {/* Main Content Area - fills remaining space */}
+        <div className="flex flex-col min-w-0 overflow-hidden">
+          {/* Toolbar */}
+          <div className="flex items-center justify-end gap-2 p-2 border-b border-mc-border">
             <button
               onClick={() => setShowLiveFeed(!showLiveFeed)}
               className={`flex items-center gap-2 px-3 py-1.5 rounded text-sm transition-colors whitespace-nowrap ${
@@ -173,15 +176,13 @@ export default function MissionControlPage() {
                   ? 'bg-mc-accent/20 text-mc-accent' 
                   : 'bg-mc-bg-tertiary text-mc-text-secondary hover:text-mc-text'
               }`}
-              title={showLiveFeed ? 'Hide Live Feed' : 'Show Live Feed'}
             >
               {showLiveFeed ? <PanelRightClose className="w-4 h-4" /> : <PanelRightOpen className="w-4 h-4" />}
               <span className="hidden sm:inline">Live Feed</span>
             </button>
             <button
               onClick={() => setShowChat(true)}
-              className="flex items-center gap-2 px-3 py-1.5 bg-mc-accent/20 text-mc-accent rounded text-sm hover:bg-mc-accent/30 transition-colors whitespace-nowrap"
-              title="Open Chat"
+              className="flex items-center gap-2 px-3 py-1.5 bg-mc-accent/20 text-mc-accent rounded text-sm hover:bg-mc-accent/30 transition-colors"
             >
               <MessageSquare className="w-4 h-4" />
               <span className="hidden sm:inline">Chat</span>
@@ -191,18 +192,16 @@ export default function MissionControlPage() {
           <MissionQueue />
         </div>
 
-        {/* Live Feed - Responsive width, collapsible */}
+        {/* Live Feed - scales with browser width when shown */}
         {showLiveFeed && (
-          <div className="w-full sm:w-64 md:w-72 lg:w-80 border-l border-mc-border bg-mc-bg-secondary flex flex-col flex-shrink-0">
+          <div className="min-w-[250px] max-w-[500px] bg-mc-bg-secondary border-l border-mc-border flex flex-col overflow-hidden">
             <LiveFeed />
           </div>
         )}
       </div>
 
-      {/* Chat Modal - overlay instead of inline */}
+      {/* Chat Modal */}
       <ChatModal isOpen={showChat} onClose={() => setShowChat(false)} />
-
-      {/* Debug Panel - only shows when debug mode enabled */}
       <SSEDebugPanel />
     </div>
   );

@@ -64,7 +64,7 @@ export function LiveFeed() {
   };
 
   return (
-    <aside className="w-full h-full bg-mc-bg-secondary border-l border-mc-border flex flex-col">
+    <aside className="w-full h-full flex flex-col overflow-hidden">
       {/* Header */}
       <div className="p-2 sm:p-3 border-b border-mc-border">
         <div className="flex items-center gap-2 mb-3">

@@ -106,7 +106,7 @@ export function AgentsSidebar() {
   };
 
   return (
-    <aside className="w-64 bg-mc-bg-secondary border-r border-mc-border flex flex-col">
+    <aside className="w-full h-full flex flex-col overflow-hidden">
       {/* Header */}
       <div className="p-3 border-b border-mc-border">
         <div className="flex items-center justify-between mb-3">
