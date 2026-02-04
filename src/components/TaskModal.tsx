@@ -1,7 +1,7 @@
 'use client';
 
 import { useState } from 'react';
-import { X, Save, Trash2, Activity, Package, Bot, FolderOpen, Scan, FileText, Sparkles, Monitor } from 'lucide-react';
+import { X, Save, Trash2, Activity, Package, Bot, FolderOpen, Scan, FileText, Sparkles, Monitor, Copy, Plus } from 'lucide-react';
 import { useMissionControl } from '@/lib/store';
 import { ActivityLog } from './ActivityLog';
 import { DeliverablesList } from './DeliverablesList';
@@ -92,6 +92,48 @@ export function TaskModal({ task, onClose }: TaskModalProps) {
       }
     } catch (error) {
       console.error('Failed to delete task:', error);
+    }
+  };
+
+  const handleCopyTask = async () => {
+    if (!task) return;
+
+    if (!confirm(`Create a copy of "${task.title}" in Inbox?`)) return;
+
+    try {
+      const res = await fetch(`/api/tasks/${task.id}/copy`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          copy_title: true,
+          copy_description: true,
+          copy_assigned_agent: false, // Don't copy assignment - let user reassign
+          copy_output_dir: false, // Don't copy output dir - new task needs new location
+          copy_priority: true,
+          title_suffix: ' (Copy)'
+        }),
+      });
+
+      if (res.ok) {
+        const data = await res.json();
+        if (data.new_task) {
+          addTask(data.new_task);
+          addEvent({
+            id: crypto.randomUUID(),
+            type: 'task_created',
+            task_id: data.new_task.id,
+            message: `Task copied: ${data.new_task.title}`,
+            created_at: new Date().toISOString(),
+          });
+          alert(`Task copied successfully!\n\nNew task: "${data.new_task.title}" is now in Inbox.`);
+        }
+      } else {
+        const err = await res.json();
+        alert(err.error || 'Failed to copy task');
+      }
+    } catch (error) {
+      console.error('Failed to copy task:', error);
+      alert('Failed to copy task');
     }
   };
 
@@ -426,6 +468,15 @@ export function TaskModal({ task, onClose }: TaskModalProps) {
                   >
                     <Trash2 className="w-4 h-4" />
                     Delete
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handleCopyTask}
+                    className="flex items-center gap-2 px-3 py-2 text-mc-accent hover:bg-mc-accent/10 rounded text-sm"
+                    title="Copy to Inbox as new task"
+                  >
+                    <Copy className="w-4 h-4" />
+                    Copy to Inbox
                   </button>
                 </>
               )}
