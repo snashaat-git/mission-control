@@ -1,14 +1,9 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
-  experimental: {
-    serverComponentsExternalPackages: ['better-sqlite3'],
-  },
-  webpack: (config) => {
-    config.externals.push({
-      'better-sqlite3': 'commonjs better-sqlite3',
-    });
-    return config;
-  },
+  // NOTE:
+  // Next.js 16 enables Turbopack by default, and a custom `webpack` config
+  // triggers an error unless migrated to Turbopack.
+  // We keep config minimal to allow `npm run dev` to start.
 };
 
 export default nextConfig;

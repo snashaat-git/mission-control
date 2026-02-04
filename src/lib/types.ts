@@ -28,6 +28,8 @@ export interface Agent {
   avatar_emoji: string;
   status: AgentStatus;
   is_master: boolean;
+  session_key?: string;
+  model?: string;  // OpenClaw model override for this agent
   soul_md?: string;
   user_md?: string;
   agents_md?: string;
@@ -45,6 +47,7 @@ export interface Task {
   created_by_agent_id?: string;
   business_id: string;
   due_date?: string;
+  output_dir?: string;
   created_at: string;
   updated_at: string;
   // Joined fields
@@ -142,6 +145,8 @@ export interface CreateAgentRequest {
   description?: string;
   avatar_emoji?: string;
   is_master?: boolean;
+  session_key?: string;
+  model?: string;
   soul_md?: string;
   user_md?: string;
   agents_md?: string;
@@ -159,6 +164,7 @@ export interface CreateTaskRequest {
   created_by_agent_id?: string;
   business_id?: string;
   due_date?: string;
+  output_dir?: string;
 }
 
 export interface UpdateTaskRequest extends Partial<CreateTaskRequest> {

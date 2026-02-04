@@ -27,6 +27,7 @@ export function TaskModal({ task, onClose }: TaskModalProps) {
     status: task?.status || 'inbox' as TaskStatus,
     assigned_agent_id: task?.assigned_agent_id || '',
     due_date: task?.due_date || '',
+    output_dir: task?.output_dir || '',
   });
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -225,6 +226,34 @@ export function TaskModal({ task, onClose }: TaskModalProps) {
               onChange={(e) => setForm({ ...form, due_date: e.target.value })}
               className="w-full bg-mc-bg border border-mc-border rounded px-3 py-2 text-sm focus:outline-none focus:border-mc-accent"
             />
+          </div>
+
+          {/* Output Directory */}
+          <div>
+            <label className="block text-sm font-medium mb-1">Output Directory</label>
+            <div className="flex gap-2">
+              <input
+                type="text"
+                value={form.output_dir}
+                onChange={(e) => setForm({ ...form, output_dir: e.target.value })}
+                className="flex-1 bg-mc-bg border border-mc-border rounded px-3 py-2 text-sm font-mono focus:outline-none focus:border-mc-accent"
+                placeholder={task?.output_dir ? undefined : `Default: ~/openclaw/workspace/projects/${form.title.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '')}`}
+              />
+              <button
+                type="button"
+                onClick={() => {
+                  const defaultDir = `~/openclaw/workspace/projects/${form.title.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '')}`;
+                  setForm({ ...form, output_dir: defaultDir });
+                }}
+                className="px-3 py-2 bg-mc-bg-tertiary border border-mc-border rounded text-sm hover:bg-mc-bg"
+                title="Use auto-generated path"
+              >
+                Auto
+              </button>
+            </div>
+            <p className="text-xs text-mc-text-secondary mt-1">
+              Directory where the agent will save deliverables. Leave empty to use default auto-generated path.
+            </p>
           </div>
             </form>
           )}

@@ -51,9 +51,23 @@ export async function PATCH(
     const values: unknown[] = [];
     const now = new Date().toISOString();
 
-    // Workflow enforcement for agent-initiated approvals
-    // If an agent is trying to move review→done, they must be a master agent
-    // User-initiated moves (no agent ID) are allowed
+    // Workflow enforcement
+    // - Agent-initiated review→done requires master agent
+    // - Agent-initiated *→review requires completion evidence (task_activities.completed)
+    // - User-initiated moves (no updated_by_agent_id) are allowed
+    if (body.status === 'review' && existing.status !== 'review' && body.updated_by_agent_id) {
+      const completed = queryOne<{ c: number }>(
+        'SELECT COUNT(1) as c FROM task_activities WHERE task_id = ? AND activity_type = ?',
+        [id, 'completed']
+      );
+      if (!completed || completed.c === 0) {
+        return NextResponse.json(
+          { error: 'Cannot move task to REVIEW without completion evidence (TASK_COMPLETE / completed activity)' },
+          { status: 409 }
+        );
+      }
+    }
+
     if (body.status === 'done' && existing.status === 'review' && body.updated_by_agent_id) {
       const updatingAgent = queryOne<Agent>(
         'SELECT is_master FROM agents WHERE id = ?',
@@ -83,6 +97,10 @@ export async function PATCH(
     if (body.due_date !== undefined) {
       updates.push('due_date = ?');
       values.push(body.due_date);
+    }
+    if ((body as any).output_dir !== undefined) {
+      updates.push('output_dir = ?');
+      values.push((body as any).output_dir);
     }
 
     // Track if we need to dispatch task

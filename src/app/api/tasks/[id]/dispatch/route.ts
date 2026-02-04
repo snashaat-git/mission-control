@@ -21,8 +21,8 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
     const { id } = await params;
 
     // Get task with agent info
-    const task = queryOne<Task & { assigned_agent_name?: string }>(
-      `SELECT t.*, a.name as assigned_agent_name, a.is_master
+    const task = queryOne<Task & { assigned_agent_name?: string; agent_model?: string }>(
+      `SELECT t.*, a.name as assigned_agent_name, a.is_master, a.model as agent_model
        FROM tasks t
        LEFT JOIN agents a ON t.assigned_agent_id = a.id
        WHERE t.id = ?`,
@@ -117,6 +117,13 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
     const taskProjectDir = `${projectsPath}/${projectDir}`;
     const missionControlUrl = getMissionControlUrl();
 
+    // Persist the output dir on the task so future scans don't depend on title slug
+    try {
+      run('UPDATE tasks SET output_dir = ?, updated_at = ? WHERE id = ?', [taskProjectDir, now, task.id]);
+    } catch (e) {
+      console.warn('[Dispatch] Failed to persist output_dir on task:', e instanceof Error ? e.message : e);
+    }
+
     const taskMessage = `${priorityEmoji} **NEW TASK ASSIGNED**
 
 **Title:** ${task.title}
@@ -143,11 +150,51 @@ If you need help or clarification, ask me (Charlie).`;
 
     // Send message to agent's session using sessions_send
     try {
-      // Use the label from openclaw_session_id for routing
-      await client.call('sessions.send', {
-        label: session.openclaw_session_id,
-        message: taskMessage
-      });
+      // Dispatch to the OpenClaw session key.
+      // NOTE: The seeded DB creates a pseudo label like "mission-control-charlie",
+      // but OpenClaw routes by real session keys (e.g. "agent:main:main").
+      // For now, route all tasks to the main orchestrator session.
+      // TODO: add `session_key` to agents and use it here for per-agent dispatch.
+      const targetSessionKey = (agent as any).session_key || 'agent:main:main';
+      console.log('[Dispatch] Sending task', task.id, 'to OpenClaw sessionKey=' + targetSessionKey);
+
+      // Ensure the target session is active (auto-wake if missing)
+      try {
+        const live = await client.listSessions();
+        const isActive = Array.isArray(live) ? (live as any[]).some((s) => s?.key === targetSessionKey) : false;
+        if (!isActive) {
+          console.log('[Dispatch] Session not active, waking:', targetSessionKey);
+          // OpenClaw gateway supports `wake`
+          await client.call('wake', { sessionKey: targetSessionKey });
+        }
+      } catch (e) {
+        console.warn('[Dispatch] Failed to verify/wake session; will try sending anyway:', e instanceof Error ? e.message : e);
+      }
+
+      // Apply per-agent model override dynamically (Agent setting > Session key fallback > System default)
+      try {
+        const { resolveAgentModel } = await import('@/lib/model-routing');
+        const effectiveModel = resolveAgentModel({
+          sessionKey: targetSessionKey,
+          agentModel: (agent as any).model,
+        });
+
+        if (effectiveModel) {
+          if ((agent as any).model) {
+            console.log('[Dispatch] Applying agent-configured model for', agent.name, '->', effectiveModel);
+          } else {
+            console.log('[Dispatch] Applying fallback model for', targetSessionKey, '->', effectiveModel);
+          }
+          await client.call('sessions.patch', { sessionKey: targetSessionKey, model: effectiveModel });
+        } else {
+          console.log('[Dispatch] No model override; using system default for', targetSessionKey);
+        }
+      } catch (e) {
+        console.warn('[Dispatch] Model override failed (continuing):', e instanceof Error ? e.message : e);
+      }
+
+      await client.sendMessage(targetSessionKey, taskMessage);
+      console.log('[Dispatch] Sent OK');
 
       // Update task status to in_progress
       run(

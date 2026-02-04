@@ -72,11 +72,26 @@ export async function POST(request: Request, { params }: RouteParams) {
       }
     }
 
+    // Look up the Mission Control session to find the agent and their session_key
+    const db = getDb();
+    const mcSession = db.prepare(
+      `SELECT s.*, a.session_key as agent_session_key 
+       FROM openclaw_sessions s 
+       LEFT JOIN agents a ON s.agent_id = a.id 
+       WHERE s.openclaw_session_id = ? OR s.id = ?`
+    ).get(id, id) as any;
+
+    // Determine the actual OpenClaw session key to use
+    // Priority: agent's session_key > Mission Control's session_id > provided id
+    const targetSessionKey = mcSession?.agent_session_key || mcSession?.openclaw_session_id || id;
+
+    console.log('[OpenClaw API] Sending message to session:', targetSessionKey);
+
     // Prefix message with [Mission Control] so Charlie knows the source
     const prefixedContent = `[Mission Control] ${content}`;
-    await client.sendMessage(id, prefixedContent);
+    await client.sendMessage(targetSessionKey, prefixedContent);
 
-    return NextResponse.json({ success: true });
+    return NextResponse.json({ success: true, sessionKey: targetSessionKey });
   } catch (error) {
     console.error('Failed to send message to OpenClaw session:', error);
     return NextResponse.json(

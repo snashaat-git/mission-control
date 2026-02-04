@@ -12,6 +12,20 @@ interface AgentModalProps {
 
 const EMOJI_OPTIONS = ['🤖', '🦞', '💻', '🔍', '✍️', '🎨', '📊', '🧠', '⚡', '🚀', '🎯', '🔧'];
 
+// Available OpenClaw models for agent routing
+const AVAILABLE_MODELS = [
+  { id: '', label: 'Use System Default' },
+  { id: 'ollama/kimi-k2.5:cloud', label: 'Kimi K2.5 (Local Ollama)' },
+  { id: 'openrouter/stepfun/step-3.5-flash:free', label: 'StepFun 3.5 Flash (Free)' },
+  { id: 'openrouter/anthropic/claude-sonnet-4', label: 'Claude Sonnet 4' },
+  { id: 'openrouter/openai/gpt-4o', label: 'GPT-4o' },
+  { id: 'openai-codex/gpt-5.2', label: 'GPT-5.2 (Codex)' },
+  { id: 'openrouter/google/gemini-2.5-flash-preview', label: 'Gemini 2.5 Flash' },
+  { id: 'openrouter/google/gemini-2.0-flash-001', label: 'Gemini 2.0 Flash' },
+  { id: 'openrouter/deepseek/deepseek-chat', label: 'DeepSeek Chat' },
+  { id: 'openrouter/mistralai/mistral-large', label: 'Mistral Large' },
+];
+
 export function AgentModal({ agent, onClose }: AgentModalProps) {
   const { addAgent, updateAgent, agents } = useMissionControl();
   const [activeTab, setActiveTab] = useState<'info' | 'soul' | 'user' | 'agents'>('info');
@@ -24,6 +38,8 @@ export function AgentModal({ agent, onClose }: AgentModalProps) {
     avatar_emoji: agent?.avatar_emoji || '🤖',
     status: agent?.status || 'standby' as AgentStatus,
     is_master: agent?.is_master || false,
+    session_key: (agent as any)?.session_key || '',
+    model: agent?.model || '',
     soul_md: agent?.soul_md || '',
     user_md: agent?.user_md || '',
     agents_md: agent?.agents_md || '',
@@ -180,6 +196,21 @@ export function AgentModal({ agent, onClose }: AgentModalProps) {
                 />
               </div>
 
+              {/* OpenClaw Session Key */}
+              <div>
+                <label className="block text-sm font-medium mb-1">OpenClaw Session Key</label>
+                <input
+                  type="text"
+                  value={(form as any).session_key}
+                  onChange={(e) => setForm({ ...(form as any), session_key: e.target.value })}
+                  className="w-full bg-mc-bg border border-mc-border rounded px-3 py-2 text-sm font-mono focus:outline-none focus:border-mc-accent"
+                  placeholder="e.g. agent:main:main"
+                />
+                <p className="text-xs text-mc-text-secondary mt-1">
+                  Session key to dispatch tasks to (from OpenClaw → Sessions list).
+                </p>
+              </div>
+
               {/* Status */}
               <div>
                 <label className="block text-sm font-medium mb-1">Status</label>
@@ -192,6 +223,25 @@ export function AgentModal({ agent, onClose }: AgentModalProps) {
                   <option value="working">Working</option>
                   <option value="offline">Offline</option>
                 </select>
+              </div>
+
+              {/* Model Selection */}
+              <div>
+                <label className="block text-sm font-medium mb-1">Model Override</label>
+                <select
+                  value={form.model}
+                  onChange={(e) => setForm({ ...form, model: e.target.value })}
+                  className="w-full bg-mc-bg border border-mc-border rounded px-3 py-2 text-sm focus:outline-none focus:border-mc-accent"
+                >
+                  {AVAILABLE_MODELS.map((model) => (
+                    <option key={model.id} value={model.id}>
+                      {model.label}
+                    </option>
+                  ))}
+                </select>
+                <p className="text-xs text-mc-text-secondary mt-1">
+                  Select a specific model for this agent, or use system default. Only applies when OpenClaw supports per-agent model overrides.
+                </p>
               </div>
 
               {/* Master Toggle */}

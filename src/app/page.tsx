@@ -158,34 +158,31 @@ export default function MissionControlPage() {
         {/* Agents Sidebar */}
         <AgentsSidebar />
 
-        {/* Main Content Area */}
-        <div className="flex-1 flex">
-          {/* Mission Queue */}
-          <div className="flex-1 flex flex-col">
-            <MissionQueue />
-
-            {/* Chat Toggle */}
-            {!showChat && (
-              <button
-                onClick={() => setShowChat(true)}
-                className="fixed bottom-4 right-96 px-4 py-2 bg-mc-accent text-mc-bg rounded-full shadow-lg hover:bg-mc-accent/90 flex items-center gap-2"
-              >
-                💬 Open Chat
-              </button>
-            )}
+        {/* Chat Panel (first from left when shown) */}
+        {showChat && (
+          <div className="w-80 border-r border-mc-border relative">
+            <button
+              onClick={() => setShowChat(false)}
+              className="absolute top-2 right-2 z-10 p-1 hover:bg-mc-bg-tertiary rounded text-mc-text-secondary"
+            >
+              ✕
+            </button>
+            <ChatPanel />
           </div>
+        )}
 
-          {/* Chat Panel (conditionally shown) */}
-          {showChat && (
-            <div className="w-80 border-l border-mc-border relative">
-              <button
-                onClick={() => setShowChat(false)}
-                className="absolute top-2 right-2 z-10 p-1 hover:bg-mc-bg-tertiary rounded text-mc-text-secondary"
-              >
-                ✕
-              </button>
-              <ChatPanel />
-            </div>
+        {/* Main Content Area */}
+        <div className="flex-1 flex flex-col">
+          <MissionQueue />
+
+          {/* Chat Toggle */}
+          {!showChat && (
+            <button
+              onClick={() => setShowChat(true)}
+              className="fixed bottom-4 left-80 px-4 py-2 bg-mc-accent text-mc-bg rounded-full shadow-lg hover:bg-mc-accent/90 flex items-center gap-2"
+            >
+              💬 Open Chat
+            </button>
           )}
         </div>
 

@@ -6,7 +6,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { FileText, Link as LinkIcon, Package, ExternalLink, Eye } from 'lucide-react';
+import { FileText, Link as LinkIcon, Package, ExternalLink, Eye, RefreshCcw } from 'lucide-react';
 import { debug } from '@/lib/debug';
 import type { TaskDeliverable } from '@/lib/types';
 
@@ -17,6 +17,7 @@ interface DeliverablesListProps {
 export function DeliverablesList({ taskId }: DeliverablesListProps) {
   const [deliverables, setDeliverables] = useState<TaskDeliverable[]>([]);
   const [loading, setLoading] = useState(true);
+  const [scanning, setScanning] = useState(false);
 
   useEffect(() => {
     loadDeliverables();
@@ -27,12 +28,31 @@ export function DeliverablesList({ taskId }: DeliverablesListProps) {
       const res = await fetch(`/api/tasks/${taskId}/deliverables`);
       if (res.ok) {
         const data = await res.json();
-        setDeliverables(data);
+        // Some endpoints return an array, others return { deliverables: [...] }
+        const list = Array.isArray(data) ? data : (Array.isArray((data as any)?.deliverables) ? (data as any).deliverables : []);
+        setDeliverables(list);
       }
     } catch (error) {
       console.error('Failed to load deliverables:', error);
     } finally {
       setLoading(false);
+    }
+  };
+
+  const scanDeliverables = async () => {
+    setScanning(true);
+    try {
+      const res = await fetch(`/api/tasks/${taskId}/deliverables/scan`, { method: 'POST' });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err.error || 'Scan failed');
+      }
+      await loadDeliverables();
+    } catch (error) {
+      console.error('Failed to scan deliverables:', error);
+      alert(error instanceof Error ? error.message : 'Failed to scan deliverables');
+    } finally {
+      setScanning(false);
     }
   };
 
@@ -121,15 +141,40 @@ export function DeliverablesList({ taskId }: DeliverablesListProps) {
 
   if (deliverables.length === 0) {
     return (
-      <div className="flex flex-col items-center justify-center py-8 text-mc-text-secondary">
-        <div className="text-4xl mb-2">📦</div>
-        <p>No deliverables yet</p>
+      <div className="space-y-3">
+        <div className="flex justify-end">
+          <button
+            onClick={scanDeliverables}
+            disabled={scanning}
+            className="flex items-center gap-2 px-3 py-2 text-sm bg-mc-bg-tertiary border border-mc-border rounded hover:border-mc-accent disabled:opacity-50"
+            title="Scan the task output directory and register any files as deliverables"
+          >
+            <RefreshCcw className={`w-4 h-4 ${scanning ? 'animate-spin' : ''}`} />
+            {scanning ? 'Scanning…' : 'Scan deliverables'}
+          </button>
+        </div>
+
+        <div className="flex flex-col items-center justify-center py-8 text-mc-text-secondary">
+          <div className="text-4xl mb-2">📦</div>
+          <p>No deliverables yet</p>
+        </div>
       </div>
     );
   }
 
   return (
     <div className="space-y-3">
+      <div className="flex justify-end">
+        <button
+          onClick={scanDeliverables}
+          disabled={scanning}
+          className="flex items-center gap-2 px-3 py-2 text-sm bg-mc-bg-tertiary border border-mc-border rounded hover:border-mc-accent disabled:opacity-50"
+          title="Scan the task output directory and register any files as deliverables"
+        >
+          <RefreshCcw className={`w-4 h-4 ${scanning ? 'animate-spin' : ''}`} />
+          {scanning ? 'Scanning…' : 'Scan deliverables'}
+        </button>
+      </div>
       {deliverables.map((deliverable) => (
         <div
           key={deliverable.id}

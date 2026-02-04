@@ -1,6 +1,7 @@
 // OpenClaw Gateway WebSocket Client
 
 import { EventEmitter } from 'events';
+import crypto from 'crypto';
 import type { OpenClawMessage, OpenClawSessionInfo } from '../types';
 
 const GATEWAY_URL = process.env.OPENCLAW_GATEWAY_URL || 'ws://127.0.0.1:18789';
@@ -128,12 +129,22 @@ export class OpenClawClient extends EventEmitter {
 
               // Set up response handler
               this.pendingRequests.set(requestId, {
-                resolve: () => {
+                resolve: (payload?: unknown) => {
                   this.connected = true;
                   this.authenticated = true;
                   this.connecting = null;
                   this.emit('connected');
                   console.log('[OpenClaw] Authenticated successfully');
+                  try {
+                    // Log available Gateway methods once for debugging
+                    const p: any = payload;
+                    const methods = p?.features?.methods;
+                    if (Array.isArray(methods)) {
+                      console.log('[OpenClaw] Available methods:', methods);
+                    } else {
+                      console.log('[OpenClaw] Auth payload keys:', p && typeof p === 'object' ? Object.keys(p) : typeof p);
+                    }
+                  } catch {}
                   resolve();
                 },
                 reject: (error: Error) => {
@@ -251,8 +262,44 @@ export class OpenClawClient extends EventEmitter {
     return this.call<unknown[]>('sessions.history', { session_id: sessionId });
   }
 
-  async sendMessage(sessionId: string, content: string): Promise<void> {
-    await this.call('sessions.send', { session_id: sessionId, content });
+  async sendMessage(sessionKey: string, message: string): Promise<void> {
+    // OpenClaw Gateway method names vary across versions.
+    // Try the modern tool-style method first, then fall back.
+    const attempts: Array<{ method: string; params: Record<string, unknown> }> = [
+      // OpenClaw Gateway (protocol 3): chat.send requires message (string) + idempotencyKey
+      {
+        method: 'chat.send',
+        params: {
+          sessionKey,
+          idempotencyKey: crypto.randomUUID(),
+          message,
+        },
+      },
+      // Fallback seen in some builds
+      {
+        method: 'chat.send',
+        params: {
+          sessionKey,
+          idempotencyKey: crypto.randomUUID(),
+          content: message,
+        },
+      },
+    ];
+
+    let lastErr: unknown;
+    for (const a of attempts) {
+      try {
+        console.log('[OpenClaw] sendMessage trying', a.method, a.params);
+        await this.call(a.method, a.params);
+        console.log('[OpenClaw] sendMessage OK via', a.method);
+        return;
+      } catch (err) {
+        console.warn('[OpenClaw] sendMessage failed via', a.method, err instanceof Error ? err.message : err);
+        lastErr = err;
+      }
+    }
+
+    throw lastErr instanceof Error ? lastErr : new Error('Failed to send message');
   }
 
   async createSession(channel: string, peer?: string): Promise<OpenClawSessionInfo> {

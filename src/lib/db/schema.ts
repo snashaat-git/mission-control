@@ -10,6 +10,8 @@ CREATE TABLE IF NOT EXISTS agents (
   avatar_emoji TEXT DEFAULT '🤖',
   status TEXT DEFAULT 'standby' CHECK (status IN ('standby', 'working', 'offline')),
   is_master INTEGER DEFAULT 0,
+  session_key TEXT,
+  model TEXT,  -- OpenClaw model override for this agent (e.g., openrouter/stepfun/step-3.5-flash:free)
   soul_md TEXT,
   user_md TEXT,
   agents_md TEXT,
@@ -28,6 +30,7 @@ CREATE TABLE IF NOT EXISTS tasks (
   created_by_agent_id TEXT REFERENCES agents(id),
   business_id TEXT DEFAULT 'default',
   due_date TEXT,
+  output_dir TEXT,
   created_at TEXT DEFAULT (datetime('now')),
   updated_at TEXT DEFAULT (datetime('now'))
 );

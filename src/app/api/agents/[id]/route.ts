@@ -72,6 +72,14 @@ export async function PATCH(
       updates.push('is_master = ?');
       values.push(body.is_master ? 1 : 0);
     }
+    if ((body as any).session_key !== undefined) {
+      updates.push('session_key = ?');
+      values.push((body as any).session_key);
+    }
+    if ((body as any).model !== undefined) {
+      updates.push('model = ?');
+      values.push((body as any).model || null);
+    }
     if (body.soul_md !== undefined) {
       updates.push('soul_md = ?');
       values.push(body.soul_md);

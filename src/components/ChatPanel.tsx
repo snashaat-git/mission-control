@@ -3,7 +3,7 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { Send, Users, Plus, X, Zap } from 'lucide-react';
 import { useMissionControl } from '@/lib/store';
-import type { Message, Conversation, Agent, OpenClawHistoryMessage } from '@/lib/types';
+import type { Message, Conversation, Agent, OpenClawHistoryMessage, OpenClawSession } from '@/lib/types';
 import { formatDistanceToNow } from 'date-fns';
 
 export function ChatPanel() {
@@ -17,17 +17,20 @@ export function ChatPanel() {
     agents,
     addEvent,
     agentOpenClawSessions,
+    setAgentOpenClawSession,
     openclawMessages,
     setOpenclawMessages,
   } = useMissionControl();
 
   const [newMessage, setNewMessage] = useState('');
+  const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [selectedSender, setSelectedSender] = useState<string>('');
   const [showConversationList, setShowConversationList] = useState(true);
   const [showNewConvoModal, setShowNewConvoModal] = useState(false);
   const [isSendingToOpenClaw, setIsSendingToOpenClaw] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const pollIntervalRef = useRef<NodeJS.Timeout | null>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   // Find if conversation has any OpenClaw-linked agent (other than self)
   const getOpenClawLinkedAgent = useCallback(() => {
@@ -48,6 +51,26 @@ export function ChatPanel() {
       setShowConversationList(false);
     }
   }, [currentConversation?.id]);
+
+  // Load agent-to-session mappings on mount
+  useEffect(() => {
+    const loadAgentSessions = async () => {
+      try {
+        const res = await fetch('/api/openclaw/agent-sessions');
+        if (res.ok) {
+          const { mapping } = await res.json();
+          // Update store with loaded sessions
+          Object.entries(mapping).forEach(([agentId, session]) => {
+            setAgentOpenClawSession(agentId, session as OpenClawSession);
+          });
+          console.log('[ChatPanel] Loaded agent sessions:', Object.keys(mapping).length);
+        }
+      } catch (error) {
+        console.error('[ChatPanel] Failed to load agent sessions:', error);
+      }
+    };
+    loadAgentSessions();
+  }, [setAgentOpenClawSession]);
 
   // Poll OpenClaw for messages when conversation has linked agent
   useEffect(() => {
@@ -70,20 +93,36 @@ export function ChatPanel() {
         const res = await fetch(`/api/openclaw/sessions/${linkedAgent.session.openclaw_session_id}/history`);
         if (res.ok) {
           const data = await res.json();
-          const history = data.history as OpenClawHistoryMessage[];
+          // Handle both {history: {...}} and direct array formats
+          const historyArray = data.history?.messages || data.history || data || [];
+          const history = historyArray as OpenClawHistoryMessage[];
 
           // Convert OpenClaw history to Message format
-          const convertedMessages: Message[] = history.map((msg, index) => ({
-            id: `openclaw-${index}-${msg.timestamp || Date.now()}`,
-            conversation_id: currentConversation.id,
-            sender_agent_id: msg.role === 'assistant' ? linkedAgent.agent.id : undefined,
-            content: msg.content,
-            message_type: 'text',
-            created_at: msg.timestamp || new Date().toISOString(),
-            sender: msg.role === 'assistant' ? linkedAgent.agent : undefined,
-            // Mark as OpenClaw message for UI styling
-            metadata: JSON.stringify({ source: 'openclaw', role: msg.role }),
-          }));
+          const convertedMessages: Message[] = history.map((msg, index) => {
+            // Extract text content (handle both string and array formats)
+            let textContent = '';
+            if (typeof msg.content === 'string') {
+              textContent = msg.content;
+            } else if (Array.isArray(msg.content)) {
+              // Extract text from content parts (skip thinking blocks)
+              textContent = msg.content
+                .filter((part: any) => part.type === 'text')
+                .map((part: any) => part.text)
+                .join('');
+            }
+            
+            return {
+              id: `openclaw-${index}-${msg.timestamp || Date.now()}`,
+              conversation_id: currentConversation.id,
+              sender_agent_id: msg.role === 'assistant' ? linkedAgent.agent.id : undefined,
+              content: textContent,
+              message_type: 'text',
+              created_at: msg.timestamp || new Date().toISOString(),
+              sender: msg.role === 'assistant' ? linkedAgent.agent : undefined,
+              // Mark as OpenClaw message for UI styling
+              metadata: JSON.stringify({ source: 'openclaw', role: msg.role }),
+            };
+          });
 
           setOpenclawMessages(convertedMessages);
         }
@@ -124,21 +163,41 @@ export function ChatPanel() {
 
   const handleSendMessage = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!newMessage.trim() || !currentConversation || !selectedSender) return;
+    if ((!newMessage.trim() && !selectedFile) || !currentConversation) return;
 
     const linkedAgent = getOpenClawLinkedAgent();
+    
+    // For non-OpenClaw conversations, require a sender selection
+    if (!linkedAgent && !selectedSender) return;
     const messageContent = newMessage;
     setNewMessage('');
+    setSelectedFile(null);
+    if (fileInputRef.current) fileInputRef.current.value = '';
 
     // If conversation has an OpenClaw-linked agent, send via OpenClaw
     if (linkedAgent) {
       setIsSendingToOpenClaw(true);
       try {
-        const res = await fetch(`/api/openclaw/sessions/${linkedAgent.session.openclaw_session_id}`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ content: messageContent }),
-        });
+        let res: Response;
+        
+        if (selectedFile) {
+          // Upload with file
+          const formData = new FormData();
+          formData.append('file', selectedFile);
+          if (messageContent) formData.append('message', messageContent);
+          
+          res = await fetch(`/api/openclaw/sessions/${linkedAgent.session.openclaw_session_id}/upload`, {
+            method: 'POST',
+            body: formData,
+          });
+        } else {
+          // Send text only
+          res = await fetch(`/api/openclaw/sessions/${linkedAgent.session.openclaw_session_id}`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ content: messageContent }),
+          });
+        }
 
         if (res.ok) {
           const sender = agents.find((a) => a.id === selectedSender);
@@ -300,6 +359,35 @@ export function ChatPanel() {
           </div>
         )}
 
+        {/* File attachment */}
+        <div className="mb-2 flex items-center gap-2">
+          <input
+            type="file"
+            ref={fileInputRef}
+            onChange={(e) => setSelectedFile(e.target.files?.[0] || null)}
+            className="hidden"
+          />
+          <button
+            type="button"
+            onClick={() => fileInputRef.current?.click()}
+            className="flex items-center gap-1 px-3 py-1.5 bg-mc-bg-tertiary border border-mc-border rounded text-sm hover:bg-mc-bg"
+          >
+            📎 Attach
+          </button>
+          {selectedFile && (
+            <span className="text-sm text-mc-text-secondary flex items-center gap-2">
+              {selectedFile.name}
+              <button
+                type="button"
+                onClick={() => { setSelectedFile(null); if (fileInputRef.current) fileInputRef.current.value = ''; }}
+                className="text-mc-accent-red hover:text-mc-accent-red/80"
+              >
+                ×
+              </button>
+            </span>
+          )}
+        </div>
+
         <div className="flex gap-2">
           <input
             type="text"
@@ -311,11 +399,13 @@ export function ChatPanel() {
           />
           <button
             type="submit"
-            disabled={!newMessage.trim() || (!linkedAgentInfo && !selectedSender) || isSendingToOpenClaw}
+            disabled={(!newMessage.trim() && !selectedFile) || (!linkedAgentInfo && !selectedSender) || isSendingToOpenClaw}
             className="px-4 py-2 bg-mc-accent text-mc-bg rounded hover:bg-mc-accent/90 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
           >
             {isSendingToOpenClaw ? (
               <div className="w-4 h-4 border-2 border-mc-bg border-t-transparent rounded-full animate-spin" />
+            ) : selectedFile ? (
+              <span>📄</span>
             ) : linkedAgentInfo ? (
               <Zap className="w-4 h-4" />
             ) : (

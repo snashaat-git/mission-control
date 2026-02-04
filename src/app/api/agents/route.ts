@@ -29,8 +29,8 @@ export async function POST(request: NextRequest) {
     const now = new Date().toISOString();
 
     run(
-      `INSERT INTO agents (id, name, role, description, avatar_emoji, is_master, soul_md, user_md, agents_md, created_at, updated_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      `INSERT INTO agents (id, name, role, description, avatar_emoji, is_master, session_key, model, soul_md, user_md, agents_md, created_at, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [
         id,
         body.name,
@@ -38,6 +38,8 @@ export async function POST(request: NextRequest) {
         body.description || null,
         body.avatar_emoji || '🤖',
         body.is_master ? 1 : 0,
+        (body as any).session_key || null,
+        (body as any).model || null,
         body.soul_md || null,
         body.user_md || null,
         body.agents_md || null,

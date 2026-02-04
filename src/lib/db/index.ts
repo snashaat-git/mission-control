@@ -17,6 +17,15 @@ export function getDb(): Database.Database {
 
     // Run migrations for existing databases
     runMigrations(db);
+
+    // Start background watchers (server-side only)
+    try {
+      // eslint-disable-next-line @typescript-eslint/no-var-requires
+      const { startTaskCompletionWatcher } = require('../task-completion-watcher');
+      startTaskCompletionWatcher();
+    } catch (e) {
+      console.warn('[Watcher] Failed to start task completion watcher:', e);
+    }
   }
   return db;
 }
@@ -25,6 +34,30 @@ export function getDb(): Database.Database {
  * Run database migrations for schema updates
  */
 function runMigrations(db: Database.Database): void {
+  // Migration: Add model column to agents table (per-agent model override)
+  try {
+    const cols = db.prepare(`PRAGMA table_info(agents)`).all() as any[];
+    const hasModelColumn = cols.some((c) => c?.name === 'model');
+    if (!hasModelColumn) {
+      console.log('[DB Migration] Adding agents.model column...');
+      db.exec(`ALTER TABLE agents ADD COLUMN model TEXT;`);
+    }
+  } catch (e) {
+    console.log('[DB Migration] model column migration skipped/failed:', e);
+  }
+
+  // Migration: Add output_dir column to tasks table (store computed deliverables dir)
+  try {
+    const cols = db.prepare(`PRAGMA table_info(tasks)`).all() as any[];
+    const hasOutputDir = cols.some((c) => c?.name === 'output_dir');
+    if (!hasOutputDir) {
+      console.log('[DB Migration] Adding tasks.output_dir column...');
+      db.exec(`ALTER TABLE tasks ADD COLUMN output_dir TEXT;`);
+    }
+  } catch (e) {
+    console.log('[DB Migration] output_dir migration skipped/failed:', e);
+  }
+
   // Migration: Add 'testing' status to tasks table
   // SQLite doesn't support altering CHECK constraints directly,
   // so we need to recreate the table or update the constraint.
