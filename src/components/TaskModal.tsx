@@ -1,7 +1,7 @@
 'use client';
 
 import { useState } from 'react';
-import { X, Save, Trash2, Activity, Package, Bot } from 'lucide-react';
+import { X, Save, Trash2, Activity, Package, Bot, FolderOpen, Scan, ArrowRight } from 'lucide-react';
 import { useMissionControl } from '@/lib/store';
 import { ActivityLog } from './ActivityLog';
 import { DeliverablesList } from './DeliverablesList';
@@ -283,6 +283,41 @@ export function TaskModal({ task, onClose }: TaskModalProps) {
                 ? "Agent will use the directory you specify in the task description." 
                 : "Directory where the agent will save deliverables."}
             </p>
+            
+            {/* Quick action buttons for existing task with output_dir */}
+            {task && (task.output_dir || form.output_dir) && !form.use_prompt_dir && (
+              <div className="flex gap-2 mt-2">
+                <a
+                  href={`/api/files/browse?path=${encodeURIComponent(task.output_dir || form.output_dir || '')}`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="flex items-center gap-1 px-3 py-1.5 bg-mc-bg-tertiary border border-mc-border rounded text-sm hover:bg-mc-bg hover:border-mc-accent"
+                >
+                  <FolderOpen className="w-4 h-4" />
+                  Open Folder
+                </a>
+                <button
+                  type="button"
+                  onClick={async () => {
+                    try {
+                      const res = await fetch(`/api/tasks/${task.id}/deliverables/scan`, { method: 'POST' });
+                      if (res.ok) {
+                        alert('Deliverables scanned successfully');
+                      } else {
+                        const err = await res.json();
+                        alert(err.error || 'Scan failed');
+                      }
+                    } catch (e) {
+                      alert('Failed to scan deliverables');
+                    }
+                  }}
+                  className="flex items-center gap-1 px-3 py-1.5 bg-mc-bg-tertiary border border-mc-border rounded text-sm hover:bg-mc-bg hover:border-mc-accent"
+                >
+                  <Scan className="w-4 h-4" />
+                  Scan Files
+                </button>
+              </div>
+            )}
           </div>
             </form>
           )}

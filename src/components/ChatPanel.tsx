@@ -105,7 +105,7 @@ export function ChatPanel() {
               textContent = msg.content;
             } else if (Array.isArray(msg.content)) {
               // Extract text from content parts (skip thinking blocks)
-              textContent = msg.content
+              textContent = (msg.content as any[])
                 .filter((part: any) => part.type === 'text')
                 .map((part: any) => part.text)
                 .join('');

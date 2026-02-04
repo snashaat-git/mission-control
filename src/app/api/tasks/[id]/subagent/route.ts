@@ -7,16 +7,20 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getDb } from '@/lib/db';
 import { broadcast } from '@/lib/events';
 
+interface RouteParams {
+  params: Promise<{ id: string }>;
+}
+
 /**
  * POST /api/tasks/[id]/subagent
  * Register a sub-agent session for a task
  */
 export async function POST(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: RouteParams
 ) {
   try {
-    const taskId = params.id;
+    const { id: taskId } = await params;
     const body = await request.json();
     
     const { openclaw_session_id, agent_name } = body;
@@ -102,10 +106,10 @@ export async function POST(
  */
 export async function GET(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: RouteParams
 ) {
   try {
-    const taskId = params.id;
+    const { id: taskId } = await params;
     const db = getDb();
 
     const sessions = db.prepare(`

@@ -46,6 +46,58 @@ export function startTaskCompletionWatcher() {
         );
         if (!agent) continue;
 
+        // METHOD 1: Check for completion activities (newer approach)
+        // Look for recently created 'completed' activities for in_progress tasks
+        if (task.status === 'in_progress') {
+          const completionActivity = queryOne<{ id: string; message: string; created_at: string }>(
+            `SELECT id, message, created_at FROM task_activities 
+             WHERE task_id = ? AND activity_type = 'completed' 
+             AND created_at > datetime('now', '-5 minutes')
+             ORDER BY created_at DESC LIMIT 1`,
+            [task.id]
+          );
+          
+          if (completionActivity) {
+            const summary = completionActivity.message || 'Task completed';
+            const now = new Date().toISOString();
+            
+            console.log('[Watcher] Found completion activity for task', task.id, 'summary:', summary.substring(0, 80));
+            
+            try {
+              transaction(() => {
+                // Move task to testing
+                const newStatus = 'testing';
+                const taskResult = run('UPDATE tasks SET status = ?, updated_at = ? WHERE id = ?', [newStatus, now, task.id]);
+                console.log('[Watcher] Task status updated to', newStatus, 'changes:', taskResult.changes);
+                
+                // Agent back to standby
+                const agentResult = run('UPDATE agents SET status = ?, updated_at = ? WHERE id = ?', ['standby', now, agent.id]);
+                console.log('[Watcher] Agent status updated, changes:', agentResult.changes);
+                
+                // Event for feed (skip activity creation since it already exists)
+                run(
+                  `INSERT INTO events (id, type, agent_id, task_id, message, created_at)
+                   VALUES (?, ?, ?, ?, ?, ?)`,
+                  [uuidv4(), 'task_completed', agent.id, task.id, `${agent.name} completed: ${summary}`, now]
+                );
+              });
+              
+              // Broadcast update after successful transaction
+              const updated = queryOne<Task>('SELECT * FROM tasks WHERE id = ?', [task.id]);
+              if (updated) {
+                broadcast({ type: 'task_updated', payload: updated });
+                console.log('[Watcher] Broadcast task update for', task.id, 'new status:', updated.status);
+              }
+              
+              // Skip to next task - we've handled this one
+              continue;
+            } catch (txError) {
+              console.error('[Watcher] Transaction failed for task', task.id, ':', txError instanceof Error ? txError.message : txError);
+            }
+          }
+        }
+
+        // METHOD 2: Legacy - Check chat history for TASK_COMPLETE message
         const sessionKey = (agent as any).session_key as string | undefined;
         if (!sessionKey) continue;
 
@@ -135,9 +187,10 @@ export function startTaskCompletionWatcher() {
                   console.warn('[Watcher] Deliverable scan failed:', e instanceof Error ? e.message : e);
                 }
 
-                // Move task to review (agent-driven)
-                const taskResult = run('UPDATE tasks SET status = ?, updated_at = ? WHERE id = ?', ['review', now, task.id]);
-                console.log('[Watcher] Task status updated, changes:', taskResult.changes);
+                // Move task to testing for verification (agent-driven workflow)
+                const newStatus = 'testing';
+                const taskResult = run('UPDATE tasks SET status = ?, updated_at = ? WHERE id = ?', [newStatus, now, task.id]);
+                console.log('[Watcher] Task status updated to', newStatus, 'changes:', taskResult.changes);
 
                 // Agent back to standby
                 const agentResult = run('UPDATE agents SET status = ?, updated_at = ? WHERE id = ?', ['standby', now, agent.id]);
