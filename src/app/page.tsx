@@ -200,8 +200,12 @@ export default function MissionControlPage() {
         )}
       </div>
 
-      {/* Chat Modal */}
-      <ChatModal isOpen={showChat} onClose={() => setShowChat(false)} />
+      {/* Chat Modal - Floating button + modal */}
+      <ChatModal 
+        isOpen={showChat} 
+        onClose={() => setShowChat(false)}
+        onOpen={() => setShowChat(true)}
+      />
       <SSEDebugPanel />
     </div>
   );

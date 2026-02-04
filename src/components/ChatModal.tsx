@@ -6,16 +6,16 @@ import { ChatPanel } from './ChatPanel';
 interface ChatModalProps {
   isOpen: boolean;
   onClose: () => void;
+  onOpen?: () => void;
 }
 
-export function ChatModal({ isOpen, onClose }: ChatModalProps) {
+export function ChatModal({ isOpen, onClose, onOpen }: ChatModalProps) {
   if (!isOpen) {
     // Floating button when closed
     return (
       <button
-        onClick={() => {/* handl */}}
-        className="fixed bottom-4 right-4 px-4 py-3 bg-mc-accent text-mc-bg rounded-full shadow-lg hover:bg-mc-accent/90 flex items-center gap-2 z-40 transition-transform hover:scale-105"
-        onClickCapture={onClose}
+        onClick={onOpen}
+        className="fixed bottom-4 right-4 px-4 py-3 bg-mc-accent text-mc-bg rounded-full shadow-lg hover:bg-mc-accent/90 flex items-center gap-2 z-40 transition-transform hover:scale-105 border border-mc-accent"
       >
         <MessageSquare className="w-5 h-5" />
         <span className="font-medium">Chat</span>
