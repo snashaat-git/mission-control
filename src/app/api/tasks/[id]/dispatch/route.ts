@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { v4 as uuidv4 } from 'uuid';
-import { queryOne, run } from '@/lib/db';
+import { queryOne, run, transaction } from '@/lib/db';
 import { getOpenClawClient } from '@/lib/openclaw/client';
 import { broadcast } from '@/lib/events';
 import { getProjectsPath, getMissionControlUrl } from '@/lib/config';
@@ -17,8 +17,11 @@ interface RouteParams {
  * Creates session if needed, sends task details to agent.
  */
 export async function POST(request: NextRequest, { params }: RouteParams) {
+  let updateErrors: string[] = [];
+  
   try {
     const { id } = await params;
+    const now = new Date().toISOString();
 
     // Get task with agent info
     const task = queryOne<Task & { assigned_agent_name?: string; agent_model?: string }>(
@@ -70,37 +73,31 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
       [agent.id, 'active']
     );
 
-    const now = new Date().toISOString();
-
     if (!session) {
       // Create session record
       const sessionId = uuidv4();
       const openclawSessionId = `mission-control-${agent.name.toLowerCase().replace(/\s+/g, '-')}`;
       
-      run(
-        `INSERT INTO openclaw_sessions (id, agent_id, openclaw_session_id, channel, status, created_at, updated_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?)`,
-        [sessionId, agent.id, openclawSessionId, 'mission-control', 'active', now, now]
-      );
+      try {
+        run(
+          `INSERT INTO openclaw_sessions (id, agent_id, openclaw_session_id, channel, status, created_at, updated_at)
+           VALUES (?, ?, ?, ?, ?, ?, ?)`,
+          [sessionId, agent.id, openclawSessionId, 'mission-control', 'active', now, now]
+        );
 
-      session = queryOne<OpenClawSession>(
-        'SELECT * FROM openclaw_sessions WHERE id = ?',
-        [sessionId]
-      );
+        session = queryOne<OpenClawSession>(
+          'SELECT * FROM openclaw_sessions WHERE id = ?',
+          [sessionId]
+        );
 
-      // Log session creation
-      run(
-        `INSERT INTO events (id, type, agent_id, message, created_at)
-         VALUES (?, ?, ?, ?, ?)`,
-        [uuidv4(), 'agent_status_changed', agent.id, `${agent.name} session created`, now]
-      );
-    }
-
-    if (!session) {
-      return NextResponse.json(
-        { error: 'Failed to create agent session' },
-        { status: 500 }
-      );
+        run(
+          `INSERT INTO events (id, type, agent_id, message, created_at)
+           VALUES (?, ?, ?, ?, ?)`,
+          [uuidv4(), 'agent_status_changed', agent.id, `${agent.name} session created`, now]
+        );
+      } catch (e) {
+        console.error('[Dispatch] Failed to create session:', e);
+      }
     }
 
     // Build task message for agent
@@ -114,14 +111,14 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
     // Get project path for deliverables
     const projectsPath = getProjectsPath();
     const projectDir = task.title.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
-    const taskProjectDir = `${projectsPath}/${projectDir}`;
+    const taskProjectDir = task.output_dir || `${projectsPath}/${projectDir}`;
     const missionControlUrl = getMissionControlUrl();
 
-    // Persist the output dir on the task so future scans don't depend on title slug
+    // Persist the output dir on the task
     try {
       run('UPDATE tasks SET output_dir = ?, updated_at = ? WHERE id = ?', [taskProjectDir, now, task.id]);
     } catch (e) {
-      console.warn('[Dispatch] Failed to persist output_dir on task:', e instanceof Error ? e.message : e);
+      console.warn('[Dispatch] Failed to persist output_dir:', e instanceof Error ? e.message : e);
     }
 
     const taskMessage = `${priorityEmoji} **NEW TASK ASSIGNED**
@@ -148,30 +145,24 @@ When complete, reply with:
 
 If you need help or clarification, ask me (Charlie).`;
 
-    // Send message to agent's session using sessions_send
+    // Send message to agent's session
     try {
-      // Dispatch to the OpenClaw session key.
-      // NOTE: The seeded DB creates a pseudo label like "mission-control-charlie",
-      // but OpenClaw routes by real session keys (e.g. "agent:main:main").
-      // For now, route all tasks to the main orchestrator session.
-      // TODO: add `session_key` to agents and use it here for per-agent dispatch.
       const targetSessionKey = (agent as any).session_key || 'agent:main:main';
-      console.log('[Dispatch] Sending task', task.id, 'to OpenClaw sessionKey=' + targetSessionKey);
+      console.log('[Dispatch] Sending task', task.id, 'to sessionKey=' + targetSessionKey);
 
-      // Ensure the target session is active (auto-wake if missing)
+      // Ensure the target session is active
       try {
         const live = await client.listSessions();
         const isActive = Array.isArray(live) ? (live as any[]).some((s) => s?.key === targetSessionKey) : false;
         if (!isActive) {
-          console.log('[Dispatch] Session not active, waking:', targetSessionKey);
-          // OpenClaw gateway supports `wake`
+          console.log('[Dispatch] Waking session:', targetSessionKey);
           await client.call('wake', { sessionKey: targetSessionKey });
         }
       } catch (e) {
-        console.warn('[Dispatch] Failed to verify/wake session; will try sending anyway:', e instanceof Error ? e.message : e);
+        console.warn('[Dispatch] Wake warning:', e instanceof Error ? e.message : e);
       }
 
-      // Apply per-agent model override dynamically (Agent setting > Session key fallback > System default)
+      // Apply per-agent model override
       try {
         const { resolveAgentModel } = await import('@/lib/model-routing');
         const effectiveModel = resolveAgentModel({
@@ -180,30 +171,59 @@ If you need help or clarification, ask me (Charlie).`;
         });
 
         if (effectiveModel) {
-          if ((agent as any).model) {
-            console.log('[Dispatch] Applying agent-configured model for', agent.name, '->', effectiveModel);
-          } else {
-            console.log('[Dispatch] Applying fallback model for', targetSessionKey, '->', effectiveModel);
-          }
+          console.log('[Dispatch] Model override:', targetSessionKey, '->', effectiveModel);
           await client.call('sessions.patch', { sessionKey: targetSessionKey, model: effectiveModel });
-        } else {
-          console.log('[Dispatch] No model override; using system default for', targetSessionKey);
         }
       } catch (e) {
-        console.warn('[Dispatch] Model override failed (continuing):', e instanceof Error ? e.message : e);
+        console.warn('[Dispatch] Model override failed:', e instanceof Error ? e.message : e);
       }
 
       await client.sendMessage(targetSessionKey, taskMessage);
-      console.log('[Dispatch] Sent OK');
+      console.log('[Dispatch] Message sent successfully');
 
-      // Update task status to in_progress
-      run(
-        'UPDATE tasks SET status = ?, updated_at = ? WHERE id = ?',
-        ['in_progress', now, id]
-      );
+      // CRITICAL: Update task status to in_progress using transaction
+      console.log('[Dispatch] Starting transaction block...');
+      try {
+        const freshNow = new Date().toISOString();
+        console.log('[Dispatch] Timestamp:', freshNow, 'Task ID:', id, 'Agent ID:', agent.id);
 
-      // Broadcast task update
+        const result = transaction(() => {
+          console.log('[Dispatch] Inside transaction, updating task...');
+          const taskUpdate = run(
+            'UPDATE tasks SET status = ?, updated_at = ? WHERE id = ?',
+            ['in_progress', freshNow, id]
+          );
+          console.log('[Dispatch] Task UPDATE result:', { changes: taskUpdate.changes, lastInsertRowid: taskUpdate.lastInsertRowid });
+
+          console.log('[Dispatch] Inside transaction, updating agent...');
+          const agentUpdate = run(
+            'UPDATE agents SET status = ?, updated_at = ? WHERE id = ?',
+            ['working', freshNow, agent.id]
+          );
+          console.log('[Dispatch] Agent UPDATE result:', { changes: agentUpdate.changes });
+
+          console.log('[Dispatch] Inside transaction, inserting event...');
+          const eventInsert = run(
+            `INSERT INTO events (id, type, agent_id, task_id, message, created_at)
+             VALUES (?, ?, ?, ?, ?, ?)`,
+            [uuidv4(), 'task_dispatched', agent.id, task.id, `Task "${task.title}" dispatched to ${agent.name}`, freshNow]
+          );
+          console.log('[Dispatch] Event INSERT result:', { changes: eventInsert.changes });
+
+          return { success: true, taskChanges: taskUpdate.changes, agentChanges: agentUpdate.changes };
+        });
+        console.log('[Dispatch] Transaction committed successfully:', result);
+      } catch (txError) {
+        const errorMsg = `[Dispatch] Transaction FAILED: ${txError instanceof Error ? txError.message : String(txError)}`;
+        updateErrors.push(errorMsg);
+        console.error(errorMsg);
+        console.error('[Dispatch] Stack trace:', txError instanceof Error ? txError.stack : 'No stack');
+      }
+
+      // Broadcast the update (even if inside transaction, we need fresh data)
       const updatedTask = queryOne<Task>('SELECT * FROM tasks WHERE id = ?', [id]);
+      console.log('[Dispatch] Task status after update:', updatedTask?.status);
+      
       if (updatedTask) {
         broadcast({
           type: 'task_updated',
@@ -211,31 +231,12 @@ If you need help or clarification, ask me (Charlie).`;
         });
       }
 
-      // Update agent status to working
-      run(
-        'UPDATE agents SET status = ?, updated_at = ? WHERE id = ?',
-        ['working', now, agent.id]
-      );
-
-      // Log dispatch event
-      run(
-        `INSERT INTO events (id, type, agent_id, task_id, message, created_at)
-         VALUES (?, ?, ?, ?, ?, ?)`,
-        [
-          uuidv4(),
-          'task_dispatched',
-          agent.id,
-          task.id,
-          `Task "${task.title}" dispatched to ${agent.name}`,
-          now
-        ]
-      );
-
       return NextResponse.json({
         success: true,
         task_id: task.id,
         agent_id: agent.id,
-        session_id: session.openclaw_session_id,
+        new_status: updatedTask?.status || 'unknown',
+        errors: updateErrors.length > 0 ? updateErrors : undefined,
         message: 'Task dispatched to agent'
       });
     } catch (err) {
@@ -248,7 +249,7 @@ If you need help or clarification, ask me (Charlie).`;
   } catch (error) {
     console.error('Failed to dispatch task:', error);
     return NextResponse.json(
-      { error: error instanceof Error ? error.message : 'Failed to dispatch task' },
+      { error: error instanceof Error ? error.message : 'Failed to dispatch task', details: updateErrors },
       { status: 500 }
     );
   }

@@ -7,6 +7,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getDb } from '@/lib/db';
 import { broadcast } from '@/lib/events';
 import type { TaskActivity } from '@/lib/types';
+import crypto from 'crypto';
 
 /**
  * GET /api/tasks/[id]/activities
@@ -86,6 +87,17 @@ export async function POST(
       );
     }
 
+    // If no agent_id provided, look up the assigned agent for this task
+    let resolvedAgentId = agent_id;
+    if (!resolvedAgentId) {
+      const db = getDb();
+      const task = db.prepare('SELECT assigned_agent_id FROM tasks WHERE id = ?').get(taskId) as { assigned_agent_id: string } | undefined;
+      if (task?.assigned_agent_id) {
+        resolvedAgentId = task.assigned_agent_id;
+        console.log('[Activities] Auto-resolved agent_id from task assignment:', resolvedAgentId);
+      }
+    }
+
     const db = getDb();
     const id = crypto.randomUUID();
 
@@ -96,7 +108,7 @@ export async function POST(
     `).run(
       id,
       taskId,
-      agent_id || null,
+      resolvedAgentId || null,
       activity_type,
       message,
       metadata ? JSON.stringify(metadata) : null
@@ -143,9 +155,14 @@ export async function POST(
 
     return NextResponse.json(result, { status: 201 });
   } catch (error) {
-    console.error('Error creating activity:', error);
+    const errorDetails = error instanceof Error ? {
+      message: error.message,
+      stack: error.stack,
+      name: error.name
+    } : String(error);
+    console.error('[Activities] Error creating activity:', errorDetails);
     return NextResponse.json(
-      { error: 'Failed to create activity' },
+      { error: 'Failed to create activity', details: errorDetails },
       { status: 500 }
     );
   }

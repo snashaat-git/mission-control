@@ -51,16 +51,25 @@ export async function PATCH(
     const values: unknown[] = [];
     const now = new Date().toISOString();
 
+    // Auto-resolve updated_by_agent_id from task assignment if not provided
+    let resolvedUpdaterId = body.updated_by_agent_id;
+    if (!resolvedUpdaterId && existing.assigned_agent_id) {
+      resolvedUpdaterId = existing.assigned_agent_id;
+      console.log('[PATCH] Auto-resolved updated_by_agent_id from task assignment:', resolvedUpdaterId);
+    }
+
     // Workflow enforcement
     // - Agent-initiated review→done requires master agent
     // - Agent-initiated *→review requires completion evidence (task_activities.completed)
     // - User-initiated moves (no updated_by_agent_id) are allowed
-    if (body.status === 'review' && existing.status !== 'review' && body.updated_by_agent_id) {
+    if (body.status === 'review' && existing.status !== 'review' && resolvedUpdaterId) {
       const completed = queryOne<{ c: number }>(
         'SELECT COUNT(1) as c FROM task_activities WHERE task_id = ? AND activity_type = ?',
         [id, 'completed']
       );
+      console.log('[PATCH] Checking completion evidence for review transition:', { taskId: id, completedCount: completed?.c || 0 });
       if (!completed || completed.c === 0) {
+        console.log('[PATCH] BLOCKED: Cannot move to review without completed activity');
         return NextResponse.json(
           { error: 'Cannot move task to REVIEW without completion evidence (TASK_COMPLETE / completed activity)' },
           { status: 409 }
@@ -68,13 +77,14 @@ export async function PATCH(
       }
     }
 
-    if (body.status === 'done' && existing.status === 'review' && body.updated_by_agent_id) {
+    if (body.status === 'done' && existing.status === 'review' && resolvedUpdaterId) {
       const updatingAgent = queryOne<Agent>(
         'SELECT is_master FROM agents WHERE id = ?',
-        [body.updated_by_agent_id]
+        [resolvedUpdaterId]
       );
 
       if (!updatingAgent || !updatingAgent.is_master) {
+        console.log('[PATCH] BLOCKED: Only master agent can approve tasks');
         return NextResponse.json(
           { error: 'Forbidden: only master agent (Charlie) can approve tasks' },
           { status: 403 }
