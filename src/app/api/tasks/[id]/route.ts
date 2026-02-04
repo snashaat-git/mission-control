@@ -189,16 +189,28 @@ export async function PATCH(
       });
     }
 
-    // Trigger auto-dispatch if needed
+    // Trigger auto-dispatch if needed (but only if not already dispatched/in_progress)
     if (shouldDispatch) {
-      // Call dispatch endpoint asynchronously (don't wait for response)
-      const missionControlUrl = getMissionControlUrl();
-      fetch(`${missionControlUrl}/api/tasks/${id}/dispatch`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' }
-      }).catch(err => {
-        console.error('Auto-dispatch failed:', err);
-      });
+      // Check if already dispatched to prevent duplicates
+      const alreadyDispatched = queryOne<{ c: number }>(
+        'SELECT COUNT(1) as c FROM events WHERE task_id = ? AND type = ? AND created_at > ?',
+        [id, 'task_dispatched', existing.updated_at]
+      );
+      const isInProgress = task?.status === 'in_progress';
+      
+      if ((alreadyDispatched && alreadyDispatched.c > 0) || isInProgress) {
+        console.log('[PATCH] Skipping duplicate dispatch:', { taskId: id, alreadyDispatched: alreadyDispatched?.c, isInProgress });
+      } else {
+        console.log('[PATCH] Triggering auto-dispatch for task:', id);
+        // Call dispatch endpoint asynchronously (don't wait for response)
+        const missionControlUrl = getMissionControlUrl();
+        fetch(`${missionControlUrl}/api/tasks/${id}/dispatch`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' }
+        }).catch(err => {
+          console.error('Auto-dispatch failed:', err);
+        });
+      }
     }
 
     return NextResponse.json(task);

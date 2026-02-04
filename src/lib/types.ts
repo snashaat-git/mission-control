@@ -230,3 +230,22 @@ export interface SSEEvent {
     id: string;  // For task_deleted events
   };
 }
+
+// Prompt Library types
+export interface Prompt {
+  id: string;
+  title: string;
+  content: string;
+  description?: string;
+  category: string;
+  agent_id?: string;
+  tags?: string[];
+  variables?: string[];
+  is_template: boolean;
+  usage_count: number;
+  created_at: string;
+  updated_at: string;
+  // Joined fields
+  agent_name?: string;
+  agent_emoji?: string;
+}

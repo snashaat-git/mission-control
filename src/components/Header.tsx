@@ -2,8 +2,9 @@
 
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
-import { Zap, Settings } from 'lucide-react';
+import { Zap, Settings, Library } from 'lucide-react';
 import { useMissionControl } from '@/lib/store';
+import { PromptsLibrary } from './PromptsLibrary';
 import { format } from 'date-fns';
 
 export function Header() {
@@ -11,6 +12,7 @@ export function Header() {
   const { agents, tasks, isOnline, selectedBusiness, setSelectedBusiness } = useMissionControl();
   const [currentTime, setCurrentTime] = useState(new Date());
   const [activeSubAgents, setActiveSubAgents] = useState(0);
+  const [showPromptsLibrary, setShowPromptsLibrary] = useState(false);
 
   useEffect(() => {
     const timer = setInterval(() => setCurrentTime(new Date()), 1000);
@@ -96,6 +98,13 @@ export function Header() {
           {isOnline ? 'ONLINE' : 'OFFLINE'}
         </div>
         <button
+          onClick={() => setShowPromptsLibrary(true)}
+          className="p-2 hover:bg-mc-bg-tertiary rounded text-mc-text-secondary"
+          title="Prompts Library"
+        >
+          <Library className="w-5 h-5" />
+        </button>
+        <button
           onClick={() => router.push('/settings')}
           className="p-2 hover:bg-mc-bg-tertiary rounded text-mc-text-secondary"
           title="Settings"
@@ -103,6 +112,12 @@ export function Header() {
           <Settings className="w-5 h-5" />
         </button>
       </div>
+
+      {/* Prompts Library Modal */}
+      <PromptsLibrary 
+        isOpen={showPromptsLibrary} 
+        onClose={() => setShowPromptsLibrary(false)} 
+      />
     </header>
   );
 }

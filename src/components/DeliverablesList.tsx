@@ -20,6 +20,8 @@ export function DeliverablesList({ taskId }: DeliverablesListProps) {
   const [scanning, setScanning] = useState(false);
 
   useEffect(() => {
+    setLoading(true);
+    setDeliverables([]); // Clear previous task's deliverables
     loadDeliverables();
   }, [taskId]);
 

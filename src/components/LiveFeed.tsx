@@ -64,9 +64,9 @@ export function LiveFeed() {
   };
 
   return (
-    <aside className="w-80 bg-mc-bg-secondary border-l border-mc-border flex flex-col">
+    <aside className="w-full h-full bg-mc-bg-secondary border-l border-mc-border flex flex-col">
       {/* Header */}
-      <div className="p-3 border-b border-mc-border">
+      <div className="p-2 sm:p-3 border-b border-mc-border">
         <div className="flex items-center gap-2 mb-3">
           <ChevronRight className="w-4 h-4 text-mc-text-secondary" />
           <span className="text-sm font-medium uppercase tracking-wider">Live Feed</span>

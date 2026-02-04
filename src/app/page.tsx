@@ -5,11 +5,12 @@ import { Header } from '@/components/Header';
 import { AgentsSidebar } from '@/components/AgentsSidebar';
 import { MissionQueue } from '@/components/MissionQueue';
 import { LiveFeed } from '@/components/LiveFeed';
-import { ChatPanel } from '@/components/ChatPanel';
+import { ChatModal } from '@/components/ChatModal';
 import { SSEDebugPanel } from '@/components/SSEDebugPanel';
 import { useMissionControl } from '@/lib/store';
 import { useSSE } from '@/hooks/useSSE';
 import { debug } from '@/lib/debug';
+import { MessageSquare, PanelRightOpen, PanelRightClose } from 'lucide-react';
 import type { Task } from '@/lib/types';
 
 export default function MissionControlPage() {
@@ -25,6 +26,7 @@ export default function MissionControlPage() {
   } = useMissionControl();
 
   const [showChat, setShowChat] = useState(false);
+  const [showLiveFeed, setShowLiveFeed] = useState(false); // Collapsed by default
 
   // Connect to SSE for real-time updates
   useSSE();
@@ -155,40 +157,50 @@ export default function MissionControlPage() {
       <Header />
 
       <div className="flex-1 flex overflow-hidden">
-        {/* Agents Sidebar */}
-        <AgentsSidebar />
-
-        {/* Chat Panel (first from left when shown) */}
-        {showChat && (
-          <div className="w-80 border-r border-mc-border relative">
-            <button
-              onClick={() => setShowChat(false)}
-              className="absolute top-2 right-2 z-10 p-1 hover:bg-mc-bg-tertiary rounded text-mc-text-secondary"
-            >
-              ✕
-            </button>
-            <ChatPanel />
-          </div>
-        )}
-
-        {/* Main Content Area */}
-        <div className="flex-1 flex flex-col">
-          <MissionQueue />
-
-          {/* Chat Toggle */}
-          {!showChat && (
-            <button
-              onClick={() => setShowChat(true)}
-              className="fixed bottom-4 left-80 px-4 py-2 bg-mc-accent text-mc-bg rounded-full shadow-lg hover:bg-mc-accent/90 flex items-center gap-2"
-            >
-              💬 Open Chat
-            </button>
-          )}
+        {/* Agents Sidebar - Responsive: full width mobile, fixed width desktop */}
+        <div className="w-full md:w-56 lg:w-64 flex-shrink-0">
+          <AgentsSidebar />
         </div>
 
-        {/* Live Feed */}
-        <LiveFeed />
+        {/* Main Content Area - Flexible, fills remaining space */}
+        <div className="flex-1 flex flex-col min-w-0">
+          {/* Toolbar with toggle buttons */}
+          <div className="flex items-center justify-end gap-2 p-2 border-b border-mc-border overflow-x-auto">
+            <button
+              onClick={() => setShowLiveFeed(!showLiveFeed)}
+              className={`flex items-center gap-2 px-3 py-1.5 rounded text-sm transition-colors whitespace-nowrap ${
+                showLiveFeed 
+                  ? 'bg-mc-accent/20 text-mc-accent' 
+                  : 'bg-mc-bg-tertiary text-mc-text-secondary hover:text-mc-text'
+              }`}
+              title={showLiveFeed ? 'Hide Live Feed' : 'Show Live Feed'}
+            >
+              {showLiveFeed ? <PanelRightClose className="w-4 h-4" /> : <PanelRightOpen className="w-4 h-4" />}
+              <span className="hidden sm:inline">Live Feed</span>
+            </button>
+            <button
+              onClick={() => setShowChat(true)}
+              className="flex items-center gap-2 px-3 py-1.5 bg-mc-accent/20 text-mc-accent rounded text-sm hover:bg-mc-accent/30 transition-colors whitespace-nowrap"
+              title="Open Chat"
+            >
+              <MessageSquare className="w-4 h-4" />
+              <span className="hidden sm:inline">Chat</span>
+            </button>
+          </div>
+
+          <MissionQueue />
+        </div>
+
+        {/* Live Feed - Responsive width, collapsible */}
+        {showLiveFeed && (
+          <div className="w-full sm:w-64 md:w-72 lg:w-80 border-l border-mc-border bg-mc-bg-secondary flex flex-col flex-shrink-0">
+            <LiveFeed />
+          </div>
+        )}
       </div>
+
+      {/* Chat Modal - overlay instead of inline */}
+      <ChatModal isOpen={showChat} onClose={() => setShowChat(false)} />
 
       {/* Debug Panel - only shows when debug mode enabled */}
       <SSEDebugPanel />
