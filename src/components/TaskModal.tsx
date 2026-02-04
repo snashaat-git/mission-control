@@ -28,6 +28,7 @@ export function TaskModal({ task, onClose }: TaskModalProps) {
     assigned_agent_id: task?.assigned_agent_id || '',
     due_date: task?.due_date || '',
     output_dir: task?.output_dir || '',
+    use_prompt_dir: task?.output_dir === null || task?.output_dir === undefined || task?.output_dir === '',
   });
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -42,6 +43,7 @@ export function TaskModal({ task, onClose }: TaskModalProps) {
         ...form,
         assigned_agent_id: form.assigned_agent_id || null,
         due_date: form.due_date || null,
+        output_dir: form.use_prompt_dir ? null : form.output_dir || null,
       };
 
       const res = await fetch(url, {
@@ -231,28 +233,55 @@ export function TaskModal({ task, onClose }: TaskModalProps) {
           {/* Output Directory */}
           <div>
             <label className="block text-sm font-medium mb-1">Output Directory</label>
-            <div className="flex gap-2">
+            
+            {/* Checkbox to bypass output_dir (use prompt-specified directory) */}
+            <div className="flex items-center gap-2 mb-2">
               <input
-                type="text"
-                value={form.output_dir}
-                onChange={(e) => setForm({ ...form, output_dir: e.target.value })}
-                className="flex-1 bg-mc-bg border border-mc-border rounded px-3 py-2 text-sm font-mono focus:outline-none focus:border-mc-accent"
-                placeholder={task?.output_dir ? undefined : `Default: ~/openclaw/workspace/projects/${form.title.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '')}`}
-              />
-              <button
-                type="button"
-                onClick={() => {
-                  const defaultDir = `~/openclaw/workspace/projects/${form.title.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '')}`;
-                  setForm({ ...form, output_dir: defaultDir });
+                type="checkbox"
+                id="use_prompt_dir"
+                checked={form.use_prompt_dir}
+                onChange={(e) => {
+                  const checked = e.target.checked;
+                  setForm({
+                    ...form,
+                    use_prompt_dir: checked,
+                    output_dir: checked ? '' : form.output_dir || `~/openclaw/workspace/projects/${form.title.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '')}`
+                  });
                 }}
-                className="px-3 py-2 bg-mc-bg-tertiary border border-mc-border rounded text-sm hover:bg-mc-bg"
-                title="Use auto-generated path"
-              >
-                Auto
-              </button>
+                className="w-4 h-4 rounded border-mc-border bg-mc-bg checked:bg-mc-accent"
+              />
+              <label htmlFor="use_prompt_dir" className="text-sm text-mc-text-secondary cursor-pointer">
+                Use directory specified in prompt (bypass auto-generation)
+              </label>
             </div>
+            
+            {/* Output directory input - shown when not using prompt directory */}
+            {!form.use_prompt_dir && (
+              <div className="flex gap-2">
+                <input
+                  type="text"
+                  value={form.output_dir}
+                  onChange={(e) => setForm({ ...form, output_dir: e.target.value })}
+                  className="flex-1 bg-mc-bg border border-mc-border rounded px-3 py-2 text-sm font-mono focus:outline-none focus:border-mc-accent"
+                  placeholder={task?.output_dir ? undefined : `Default: ~/openclaw/workspace/projects/${form.title.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '')}`}
+                />
+                <button
+                  type="button"
+                  onClick={() => {
+                    const defaultDir = `~/openclaw/workspace/projects/${form.title.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '')}`;
+                    setForm({ ...form, output_dir: defaultDir });
+                  }}
+                  className="px-3 py-2 bg-mc-bg-tertiary border border-mc-border rounded text-sm hover:bg-mc-bg"
+                  title="Use auto-generated path"
+                >
+                  Auto
+                </button>
+              </div>
+            )}
             <p className="text-xs text-mc-text-secondary mt-1">
-              Directory where the agent will save deliverables. Leave empty to use default auto-generated path.
+              {form.use_prompt_dir 
+                ? "Agent will use the directory you specify in the task description." 
+                : "Directory where the agent will save deliverables."}
             </p>
           </div>
             </form>
