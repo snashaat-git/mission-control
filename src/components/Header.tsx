@@ -2,9 +2,10 @@
 
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
-import { Zap, Settings, Library, AlertTriangle, X } from 'lucide-react';
+import { Zap, Settings, Library, AlertTriangle, X, Mic } from 'lucide-react';
 import { useMissionControl } from '@/lib/store';
 import { PromptsLibrary } from './PromptsLibrary';
+import { VoiceInterface } from './VoiceInterface';
 import { format } from 'date-fns';
 import type { Task, TaskStatus } from '@/lib/types';
 
@@ -92,6 +93,7 @@ export function Header() {
   const [currentTime, setCurrentTime] = useState(new Date());
   const [activeSubAgents, setActiveSubAgents] = useState(0);
   const [showPromptsLibrary, setShowPromptsLibrary] = useState(false);
+  const [showVoiceInterface, setShowVoiceInterface] = useState(false);
   const [bottlenecks, setBottlenecks] = useState<Bottleneck[]>([]);
   const [dismissedAlerts, setDismissedAlerts] = useState<Set<string>>(new Set());
 
@@ -213,6 +215,13 @@ export function Header() {
             <Library className="w-5 h-5" />
           </button>
           <button
+            onClick={() => setShowVoiceInterface(true)}
+            className="p-2 hover:bg-mc-bg-tertiary rounded text-mc-text-secondary"
+            title="Voice Control"
+          >
+            <Mic className="w-5 h-5" />
+          </button>
+          <button
             onClick={() => router.push('/settings')}
             className="p-2 hover:bg-mc-bg-tertiary rounded text-mc-text-secondary"
             title="Settings"
@@ -220,6 +229,17 @@ export function Header() {
             <Settings className="w-5 h-5" />
           </button>
         </div>
+
+        {/* Voice Interface Modal */}
+        {showVoiceInterface && (
+          <VoiceInterface
+            onCommand={(result) => {
+              // Handle voice commands
+              console.log('Voice command:', result);
+              // You can add navigation or action handling here
+            }}
+          />
+        )}
 
         {/* Prompts Library Modal */}
         <PromptsLibrary 
