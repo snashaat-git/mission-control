@@ -28,6 +28,14 @@ export const AGENT_DISPATCH_CONFIG: Record<string, AgentConfig> = {
     requires_confirmation: false,
     type: 'subagent',
   },
+  // MVP Builder - Reddit research → MVP → Vercel deploy
+  'mvp-builder-001': {
+    id: 'mvp-builder-001',
+    name: 'MVP Builder',
+    auto_start: true,
+    requires_confirmation: false,
+    type: 'subagent',
+  },
 };
 
 // Default config for unknown agents
