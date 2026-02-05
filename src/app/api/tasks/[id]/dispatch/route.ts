@@ -343,11 +343,24 @@ If you need help or clarification, ask me (Charlie).`;
             ['working', freshNow, agent.id]
           );
 
+          // Log to events table (global feed)
           const eventInsert = run(
             `INSERT INTO events (id, type, agent_id, task_id, message, created_at)
              VALUES (?, ?, ?, ?, ?, ?)`,
             [uuidv4(), 'task_dispatched', agent.id, task.id, `Task "${task.title}" dispatched to ${agent.name}`, freshNow]
           );
+
+          // Log to task_activities table (task activity tab)
+          const activityInsert = run(
+            `INSERT INTO task_activities (id, task_id, agent_id, activity_type, message, created_at)
+             VALUES (?, ?, ?, ?, ?, ?)`,
+            [uuidv4(), task.id, agent.id, 'spawned', `Task dispatched to ${agent.name} for execution`, freshNow]
+          );
+
+          // Link openclaw_session to this task if session exists
+          if (session?.id) {
+            run('UPDATE openclaw_sessions SET task_id = ? WHERE id = ?', [task.id, session.id]);
+          }
 
           return { 
             success: true, 

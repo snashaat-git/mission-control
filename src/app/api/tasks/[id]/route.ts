@@ -290,7 +290,7 @@ export async function PATCH(
         shouldDispatch = true;
       }
 
-      // Log status change event
+      // Log status change event (global feed)
       const eventType = body.status === 'done' ? 'task_completed' : 'task_status_changed';
       run(
         `INSERT INTO events (id, type, agent_id, task_id, message, created_at)
@@ -298,9 +298,20 @@ export async function PATCH(
         [uuidv4(), eventType, actorId || null, id, `Task "${existing.title}" moved to ${body.status}`, now]
       );
       
-      log('info', 'Patch', 'Status change event logged', {
+      // Log status change activity (task Activity tab)
+      const activityType = body.status === 'done' ? 'completed' : 
+                          body.status === 'in_progress' ? 'updated' :
+                          body.status === 'testing' ? 'updated' : 'status_changed';
+      run(
+        `INSERT INTO task_activities (id, task_id, agent_id, activity_type, message, created_at)
+         VALUES (?, ?, ?, ?, ?, ?)`,
+        [uuidv4(), id, actorId || null, activityType, `Status changed from ${existing.status} to ${body.status}`, now]
+      );
+      
+      log('info', 'Patch', 'Status change logged to events and activities', {
         taskId: id,
         eventType,
+        activityType,
         from: existing.status,
         to: body.status
       });

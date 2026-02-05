@@ -114,6 +114,27 @@ export async function POST(request: NextRequest) {
       [uuidv4(), 'task_created', body.created_by_agent_id || null, id, eventMessage, now]
     );
 
+    // Log to task_activities (for Activity tab visibility)
+    run(
+      `INSERT INTO task_activities (id, task_id, agent_id, activity_type, message, created_at)
+       VALUES (?, ?, ?, ?, ?, ?)`,
+      [uuidv4(), id, body.created_by_agent_id || null, 'updated', `Task created: ${body.title}`, now]
+    );
+
+    // If assigned on creation, log assignment activity
+    if (body.assigned_agent_id) {
+      const assignedAgent = queryOne<Agent>('SELECT name FROM agents WHERE id = ?', [body.assigned_agent_id]);
+      const assignMsg = assignedAgent 
+        ? `Task assigned to ${assignedAgent.name}`
+        : 'Task assigned to agent';
+      
+      run(
+        `INSERT INTO task_activities (id, task_id, agent_id, activity_type, message, created_at)
+         VALUES (?, ?, ?, ?, ?, ?)`,
+        [uuidv4(), id, body.assigned_agent_id, 'updated', assignMsg, now]
+      );
+    }
+
     // Fetch created task with all joined fields
     const task = queryOne<Task>(
       `SELECT t.*,

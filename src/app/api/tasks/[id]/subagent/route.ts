@@ -102,7 +102,7 @@ export async function POST(
 
 /**
  * GET /api/tasks/[id]/subagent
- * Get all sub-agent sessions for a task
+ * Get all OpenClaw sessions for a task (both persistent and subagent)
  */
 export async function GET(
   request: NextRequest,
@@ -112,6 +112,7 @@ export async function GET(
     const { id: taskId } = await params;
     const db = getDb();
 
+    // Get ALL sessions linked to this task (persistent main sessions + subagents)
     const sessions = db.prepare(`
       SELECT 
         s.*,
@@ -119,15 +120,15 @@ export async function GET(
         a.avatar_emoji as agent_avatar_emoji
       FROM openclaw_sessions s
       LEFT JOIN agents a ON s.agent_id = a.id
-      WHERE s.task_id = ? AND s.session_type = 'subagent'
+      WHERE s.task_id = ?
       ORDER BY s.created_at DESC
     `).all(taskId);
 
     return NextResponse.json(sessions);
   } catch (error) {
-    console.error('Error fetching sub-agents:', error);
+    console.error('Error fetching sessions:', error);
     return NextResponse.json(
-      { error: 'Failed to fetch sub-agents' },
+      { error: 'Failed to fetch sessions' },
       { status: 500 }
     );
   }
