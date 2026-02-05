@@ -104,6 +104,20 @@ export const TASK_TEMPLATES: TaskTemplate[] = [
       suggested_due_hours: 16,
     },
   },
+  {
+    id: 'trading-morning-routine',
+    name: 'Trading Morning Routine',
+    description: 'Pre-London session market prep for XAUUSD & FDAX1!',
+    icon: '📈',
+    defaults: {
+      title: 'Trading Routine: London Session Prep [Date]',
+      description: '🏆 **TradingView Leap Competition** | **London Session: 10:00 AM Cairo**\n\n**Pairs:** XAUUSD (Gold), FDAX1! (DAX Futures)\n\n---\n\n## Pre-Session Checklist:\n\n### 1️⃣ Overnight Market Scan\n- [ ] XAUUSD: Check overnight range (Asia session high/low)\n- [ ] FDAX1!: Note pre-market levels, overnight gap\n- [ ] DXY (Dollar Index): Direction bias for XAUUSD\n\n### 2️⃣ Economic Calendar (Today)\n- [ ] Check ForexFactory/calendar for high-impact news\n- [ ] Note EUR/USD/GBP news times (affects DAX & Gold)\n- [ ] Mark times to AVOID trading (news spikes)\n\n### 3️⃣ Key Technical Levels\n**XAUUSD:**\n- Daily Pivot: ___\n- Support: ___ / ___ / ___\n- Resistance: ___ / ___ / ___\n- Overnight High/Low: ___ / ___\n\n**FDAX1!:**\n- Pre-market open: ___\n- Key levels: ___ / ___ / ___\n- Range expectation: ___\n\n### 4️⃣ Sentiment & News\n- [ ] Scan XAUUSD news (geopolitical, rates, USD)\n- [ ] Check DAX/Eurozone headlines\n- [ ] Check Twitter/X #XAUUSD #DAX sentiment\n\n---\n\n**Session Notes:**\n- Mood: ___\n- Bias: Bullish / Bearish / Neutral\n- Key setups watching: ___\n',
+      priority: 'high',
+      status: 'inbox',
+      output_dir: '~/openclaw/workspace/trading/routines/[date]',
+      suggested_due_hours: 2,
+    },
+  },
 ];
 
 export function getTemplateById(id: string): TaskTemplate | undefined {
