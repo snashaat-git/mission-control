@@ -250,29 +250,5 @@ export interface Prompt {
   agent_emoji?: string;
 }
 
-// Antigravity Bridge types
-export type AntigravityTaskStatus = 'pending' | 'dispatched' | 'in_progress' | 'complete' | 'error';
-
-export interface AntigravityArtifact {
-  type: 'screenshot' | 'recording' | 'code' | 'plan' | 'other';
-  name: string;
-  url?: string;
-  local_path?: string;
-  downloaded: boolean;
-  created_at: string;
-}
-
-export interface AntigravityTask {
-  id: string;
-  task_id: string;
-  workspace_url?: string;
-  workspace_name: string;
-  status: AntigravityTaskStatus;
-  prompt: string;
-  expected_artifacts: string[];
-  artifacts: AntigravityArtifact[];
-  output_dir?: string;
-  error_message?: string;
-  created_at: string;
-  updated_at: string;
-}
+// Note: Antigravity Bridge integration removed
+// Was planned but not feasible due to desktop app limitations

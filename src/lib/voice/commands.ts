@@ -70,7 +70,7 @@ const commandPatterns: { type: VoiceCommandType; patterns: RegExp[]; examples: s
       /give\s+(.+?)\s+to\s+(.+)/i,
       /delegate\s+(.+?)\s+to\s+(.+)/i,
     ],
-    examples: ['Assign task to Web Developer', 'Give landing page to Gravity Bridge'],
+    examples: ['Assign task to Web Developer', 'Give landing page to Researcher'],
   },
   {
     type: 'set_priority',

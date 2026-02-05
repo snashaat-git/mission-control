@@ -2,10 +2,58 @@
 
 import { EventEmitter } from 'events';
 import crypto from 'crypto';
+import fs from 'fs';
+import path from 'path';
 import type { OpenClawMessage, OpenClawSessionInfo } from '../types';
+
+// Helper to load env vars from .env.local if not already set
+function loadEnvLocal(): void {
+  if (process.env.OPENCLAW_GATEWAY_TOKEN) return; // Already set, skip
+
+  try {
+    // Try to find .env.local in project root (3 levels up from src/lib/openclaw/)
+    const possiblePaths = [
+      path.join(process.cwd(), '.env.local'),
+      path.join(process.cwd(), '..', '.env.local'),
+      path.join(process.cwd(), '..', '..', '.env.local'),
+      path.join(process.cwd(), '..', '..', '..', '.env.local'),
+    ];
+
+    for (const envPath of possiblePaths) {
+      if (fs.existsSync(envPath)) {
+        const content = fs.readFileSync(envPath, 'utf-8');
+        const lines = content.split('\n');
+        for (const line of lines) {
+          const match = line.match(/^OPENCLAW_GATEWAY_(\w+)=(.+)$/);
+          if (match) {
+            const key = `OPENCLAW_GATEWAY_${match[1]}`;
+            const value = match[2].trim();
+            if (!process.env[key]) {
+              process.env[key] = value;
+            }
+          }
+        }
+        console.log('[OpenClaw Client] Loaded env vars from:', envPath);
+        break;
+      }
+    }
+  } catch (error) {
+    console.warn('[OpenClaw Client] Could not load .env.local:', error);
+  }
+}
+
+// Load env on module init
+loadEnvLocal();
 
 const GATEWAY_URL = process.env.OPENCLAW_GATEWAY_URL || 'ws://127.0.0.1:18789';
 const GATEWAY_TOKEN = process.env.OPENCLAW_GATEWAY_TOKEN || '';
+
+// Log token status at module load (for debugging)
+if (GATEWAY_TOKEN) {
+  console.log('[OpenClaw Client] Gateway token loaded (length:', GATEWAY_TOKEN.length, ')');
+} else {
+  console.warn('[OpenClaw Client] WARNING: Gateway token is empty! Auth will fail.');
+}
 
 export class OpenClawClient extends EventEmitter {
   private ws: WebSocket | null = null;

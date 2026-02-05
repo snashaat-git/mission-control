@@ -1,16 +1,15 @@
 'use client';
 
 import { useState } from 'react';
-import { X, Save, Trash2, Activity, Package, Bot, FolderOpen, Scan, FileText, Sparkles, Monitor, Copy, Plus } from 'lucide-react';
+import { X, Save, Trash2, Activity, Package, Bot, FolderOpen, Scan, FileText, Sparkles, Copy, Plus } from 'lucide-react';
 import { useMissionControl } from '@/lib/store';
 import { ActivityLog } from './ActivityLog';
 import { DeliverablesList } from './DeliverablesList';
 import { SessionsList } from './SessionsList';
 import { PromptsLibrary } from './PromptsLibrary';
-import { AntigravityMonitor } from './AntigravityMonitor';
 import type { Task, TaskPriority, TaskStatus, Prompt } from '@/lib/types';
 
-type TabType = 'overview' | 'activity' | 'deliverables' | 'sessions' | 'antigravity';
+type TabType = 'overview' | 'activity' | 'deliverables' | 'sessions';
 
 interface TaskModalProps {
   task?: Task;
@@ -197,7 +196,6 @@ export function TaskModal({ task, onClose }: TaskModalProps) {
     { id: 'activity' as TabType, label: 'Activity', icon: <Activity className="w-4 h-4" /> },
     { id: 'deliverables' as TabType, label: 'Deliverables', icon: <Package className="w-4 h-4" /> },
     { id: 'sessions' as TabType, label: 'Sessions', icon: <Bot className="w-4 h-4" /> },
-    { id: 'antigravity' as TabType, label: 'Antigravity', icon: <Monitor className="w-4 h-4" /> },
   ];
 
   return (
@@ -444,14 +442,6 @@ export function TaskModal({ task, onClose }: TaskModalProps) {
           {/* Sessions Tab */}
           {activeTab === 'sessions' && task && (
             <SessionsList taskId={task.id} />
-          )}
-
-          {/* Antigravity Tab */}
-          {activeTab === 'antigravity' && task && (
-            <AntigravityMonitor 
-              taskId={task.id} 
-              outputDir={task.output_dir || form.output_dir}
-            />
           )}
         </div>
 

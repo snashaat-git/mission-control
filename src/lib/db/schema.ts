@@ -142,24 +142,9 @@ CREATE INDEX IF NOT EXISTS idx_messages_conversation ON messages(conversation_id
 CREATE INDEX IF NOT EXISTS idx_events_created ON events(created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_agents_status ON agents(status);
 
--- Antigravity Bridge tasks tracking
-CREATE TABLE IF NOT EXISTS antigravity_tasks (
-  id TEXT PRIMARY KEY,
-  task_id TEXT REFERENCES tasks(id) ON DELETE CASCADE,
-  workspace_url TEXT,
-  workspace_name TEXT NOT NULL,
-  status TEXT DEFAULT 'pending', -- pending, dispatched, in_progress, complete, error
-  prompt TEXT NOT NULL,
-  expected_artifacts TEXT, -- JSON array: ["screenshot", "recording", "code"]
-  artifacts TEXT, -- JSON array of artifact objects
-  output_dir TEXT,
-  error_message TEXT,
-  created_at TEXT DEFAULT (datetime('now')),
-  updated_at TEXT DEFAULT (datetime('now'))
-);
+-- Note: antigravity_tasks table removed - Antigravity Bridge integration not feasible
+-- (desktop app, no API access). Table kept in existing databases for historical data.
 
-CREATE INDEX IF NOT EXISTS idx_antigravity_task_id ON antigravity_tasks(task_id);
-CREATE INDEX IF NOT EXISTS idx_antigravity_status ON antigravity_tasks(status);
 CREATE INDEX IF NOT EXISTS idx_activities_task ON task_activities(task_id, created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_deliverables_task ON task_deliverables(task_id);
 CREATE INDEX IF NOT EXISTS idx_openclaw_sessions_task ON openclaw_sessions(task_id);

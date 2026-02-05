@@ -3,7 +3,6 @@ import { v4 as uuidv4 } from 'uuid';
 import { queryOne, run, queryAll } from '@/lib/db';
 import { broadcast } from '@/lib/events';
 import { getMissionControlUrl } from '@/lib/config';
-import { autoDispatchToAntigravity } from '@/lib/task-dispatchers/antigravity';
 import type { Task, UpdateTaskRequest, Agent, TaskDeliverable } from '@/lib/types';
 
 // Logger for task operations
@@ -403,49 +402,7 @@ export async function PATCH(
       }
     }
 
-    // Check for Antigravity Bridge auto-dispatch (separate from regular dispatch)
-    if (task?.assigned_agent_id && (task?.status === 'assigned' || task?.status === 'inbox')) {
-      // Check if assigned to Gravity Bridge agent
-      const agent = queryOne<{ name: string; role: string }>(
-        'SELECT name, role FROM agents WHERE id = ?',
-        [task.assigned_agent_id]
-      );
-
-      const isGravityBridge = agent && (
-        agent.name === 'Gravity Bridge' ||
-        agent.role?.toLowerCase().includes('antigravity') ||
-        agent.role?.toLowerCase().includes('gravity')
-      );
-
-      if (isGravityBridge) {
-        log('info', 'Patch', 'Task assigned to Gravity Bridge, checking Antigravity dispatch', {
-          taskId: id,
-          agentName: agent.name
-        });
-
-        // Check if already dispatched to Antigravity
-        const agDispatched = queryOne<{ c: number }>(
-          'SELECT COUNT(1) as c FROM antigravity_tasks WHERE task_id = ?',
-          [id]
-        );
-
-        if (!agDispatched || agDispatched.c === 0) {
-          log('info', 'Patch', 'Auto-dispatching to Antigravity', { taskId: id });
-          
-          // Async dispatch (don't block response)
-          autoDispatchToAntigravity(id).then(result => {
-            log('info', 'Patch', 'Antigravity dispatch result', { taskId: id, result });
-          }).catch(err => {
-            log('error', 'Patch', 'Antigravity dispatch failed', { 
-              taskId: id, 
-              error: err instanceof Error ? err.message : 'Unknown' 
-            });
-          });
-        } else {
-          log('info', 'Patch', 'Already dispatched to Antigravity', { taskId: id });
-        }
-      }
-    }
+    // Note: Antigravity Bridge integration removed - desktop app limitations
     
     const response: any = task;
     if (warnings.length > 0) {
