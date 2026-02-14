@@ -6,14 +6,38 @@ AI Agent Orchestration Dashboard for OpenClaw.
 
 ## Features
 
+### Core
 - **Agent Management**: Create, configure, and monitor AI agents with custom personalities (SOUL.md, USER.md, AGENTS.md)
-- **Mission Queue**: Kanban-style task board with drag-and-drop (INBOX → ASSIGNED → IN PROGRESS → REVIEW → DONE)
+- **Mission Queue**: Kanban-style task board with drag-and-drop (INBOX → ASSIGNED → IN PROGRESS → TESTING → REVIEW → DONE)
 - **Automated Task Dispatch**: Tasks automatically route to agents' OpenClaw sessions when assigned
 - **Completion Detection**: Agents report completion via TASK_COMPLETE message, auto-moves to review
-- **Quality Control**: Only master agent (Charlie) can approve tasks from review to done
-- **Agent Chat**: Real-time agent-to-agent conversations - watch your team collaborate
-- **Live Feed**: Real-time event stream showing all activity
+- **Quality Control**: Only master agent (Atlas) can approve tasks from review to done
+- **Agent Chat**: Real-time agent-to-agent conversations
+- **Live Feed**: Real-time SSE event stream showing all activity
 - **OpenClaw Integration**: Connects to your local OpenClaw Gateway
+
+### Phase 1 — Core Workflow & Reliability
+- **Task Dependencies**: Add/remove dependencies between tasks with cycle detection. Lock badges on Kanban prevent starting blocked tasks.
+- **Live Session View**: Real-time chat history with 3s polling, message sending, and auto-scroll. Accessible from Sessions list and Agent sidebar.
+- **Failure Detection + Auto-Retry**: Detects agent offline, session failures, task timeouts (configurable via `MC_TASK_TIMEOUT_MINUTES`), and `TASK_FAILED:` chat patterns. Auto-retries up to `max_retries` (default 2), then marks as failed. Retry button in Kanban and TaskModal.
+- **Browser Notifications**: Fires on task completed, ready for review, task failed, or agent finished. Only when tab is backgrounded. Toggle in Settings.
+- **Workflow Templates**: 3 built-in workflows (Research→Write→Review, Design→Develop→Test, Full Project Pipeline) that create multiple tasks with auto-linked dependencies.
+
+### Phase 2 — Quality of Life & Performance
+- **Full-Text Search (FTS5)**: SQLite FTS5 virtual table on tasks with auto-sync triggers. Search bar with debounced input, dropdown results with status badges, and keyboard navigation.
+- **Kanban Performance**: `React.memo` on TaskCard, `useMemo` for task grouping, `useCallback` for drag handlers, module-level constants.
+
+### Phase 3 — Advanced Features
+- **API Rate Limiting**: Next.js middleware with sliding window rate limiter. Three tiers: Strict (20 req/min), Standard (60 req/min), Relaxed (120 req/min). SSE exempt. Returns 429 with `X-RateLimit-*` headers.
+
+### Phase 4 — UI Polish & Accessibility
+- **Empty States**: Kanban columns show contextual messages. During drag, targets highlight with dashed borders and "Drop here" text.
+- **Global Toast System**: Replaced all `alert()` calls with toast notifications. Four types (success, error, warning, info) with auto-dismiss and stacking.
+- **Drag-and-Drop Visual Feedback**: Accent border glow, box-shadow, and header color changes on target columns during drag.
+- **Skeleton Loaders**: Full structural skeleton with pulsing placeholders for header, sidebar agents, and kanban cards.
+- **Accessibility (ARIA & Focus)**: `aria-label` on all icon buttons, `role="dialog"` on all modals, `focus-visible` ring, `prefers-reduced-motion` support, skip-to-content link.
+- **Mobile Responsiveness**: Collapsible sidebar with slide-over drawer, responsive modals, 44px touch targets, mobile-optimized kanban.
+- **Dark/Light Mode**: Full theme toggle with CSS variables, localStorage persistence, and flash-prevention script.
 
 ## How It Works
 
@@ -24,7 +48,7 @@ AI Agent Orchestration Dashboard for OpenClaw.
 3. **Agent works** → Task moves to IN PROGRESS, agent status becomes "working"
 4. **Agent completes** → Agent replies `TASK_COMPLETE: [summary]`
 5. **Auto-review** → Task moves to REVIEW, agent returns to "standby"
-6. **Charlie approves** → Master agent reviews work, moves to DONE
+6. **Atlas approves** → Master agent reviews work, moves to DONE
 
 ### Agent Protocol
 
@@ -54,7 +78,7 @@ See [Agent Protocol Documentation](docs/AGENT_PROTOCOL.md) for full details.
 
 ```bash
 # Clone the repository
-git clone https://github.com/yourusername/mission-control.git
+git clone https://github.com/snashaat-git/mission-control.git
 cd mission-control
 
 # Install dependencies
@@ -71,16 +95,14 @@ npm run db:seed
 npm run dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) to see Mission Control.
+Open [http://localhost:3001](http://localhost:3001) to see Mission Control.
 
 ### Configuration
 
 Mission Control supports **two configuration methods**:
 
 1. **Environment Variables** (`.env.local`) - Server-side config, best for deployments
-2. **Settings UI** - User preferences via web interface (Settings → gear icon)
-
-**📖 For complete setup instructions, see [Production Setup Guide](PRODUCTION_SETUP.md)**
+2. **Settings UI** - User preferences via web interface (Settings gear icon)
 
 ### Key Environment Variables
 
@@ -92,8 +114,9 @@ Mission Control supports **two configuration methods**:
 | `OPENCLAW_GATEWAY_URL` | `ws://127.0.0.1:18789` | Gateway WebSocket URL |
 | `OPENCLAW_GATEWAY_TOKEN` | (empty) | Auth token (required for remote) |
 | `DATABASE_PATH` | `./mission-control.db` | SQLite database path |
+| `MC_TASK_TIMEOUT_MINUTES` | `30` | Task timeout before failure detection |
 
-**⚠️ Security:** Never commit `.env.local`! It's gitignored by default.
+**Security:** Never commit `.env.local`! It's gitignored by default.
 
 ## Architecture
 
@@ -103,41 +126,60 @@ mission-control/
 │   ├── app/                    # Next.js App Router
 │   │   ├── api/               # API routes
 │   │   │   ├── agents/        # Agent CRUD
-│   │   │   ├── tasks/         # Task CRUD
+│   │   │   ├── tasks/         # Task CRUD + dispatch + dependencies + retry
 │   │   │   ├── conversations/ # Chat/conversations
-│   │   │   ├── events/        # Live feed events
-│   │   │   └── openclaw/      # OpenClaw integration
+│   │   │   ├── events/        # Live feed events (SSE)
+│   │   │   ├── openclaw/      # OpenClaw integration + models
+│   │   │   ├── search/        # FTS5 search
+│   │   │   ├── settings/      # Gateway + rate limit settings
+│   │   │   └── workflows/     # Workflow template execution
+│   │   ├── settings/          # Settings page
 │   │   ├── layout.tsx
 │   │   └── page.tsx           # Main dashboard
 │   ├── components/            # React components
 │   │   ├── Header.tsx
 │   │   ├── AgentsSidebar.tsx
 │   │   ├── AgentModal.tsx
-│   │   ├── MissionQueue.tsx
+│   │   ├── MissionQueue.tsx   # Kanban board
 │   │   ├── TaskModal.tsx
-│   │   ├── ChatPanel.tsx
-│   │   └── LiveFeed.tsx
-│   └── lib/
-│       ├── db/                # SQLite database
-│       ├── openclaw/          # OpenClaw client
-│       ├── store.ts           # Zustand state
-│       └── types.ts           # TypeScript types
+│   │   ├── ChatModal.tsx
+│   │   ├── SearchBar.tsx      # FTS5 search UI
+│   │   ├── SessionView.tsx    # Live session viewer
+│   │   ├── DependenciesList.tsx
+│   │   ├── TemplatePicker.tsx # Templates + workflows
+│   │   └── Providers.tsx      # Theme + toast providers
+│   ├── hooks/
+│   │   ├── useSSE.ts          # Server-sent events
+│   │   ├── useSessionHistory.ts
+│   │   ├── useNotifications.ts
+│   │   ├── useTheme.ts
+│   │   └── useToast.tsx
+│   ├── lib/
+│   │   ├── db/                # SQLite database + FTS5
+│   │   ├── openclaw/          # OpenClaw client
+│   │   ├── rate-limit.ts      # Sliding window rate limiter
+│   │   ├── task-completion-watcher.ts
+│   │   ├── store.ts           # Zustand state
+│   │   ├── templates.ts       # Task + workflow templates
+│   │   └── types.ts           # TypeScript types
+│   └── middleware.ts          # Rate limiting middleware
 ├── mission-control.db         # SQLite database (created on seed)
 └── package.json
 ```
 
-## Agent Personalities
+## Agents
 
-Each agent can have three markdown files defining their personality:
+Five built-in agents:
 
-### SOUL.md
-Defines the agent's core identity, personality traits, and communication style.
+| Agent | Role | Description |
+|-------|------|-------------|
+| **Atlas** | Master Orchestrator | Coordinates all agents, triages tasks, approves reviews |
+| **Cai** | Developer | Handles coding and technical implementation |
+| **Dox** | Writer | Documentation, content, and research |
+| **Luma** | Designer | UI/UX design and visual assets |
+| **Vera** | QA | Testing, quality assurance, and verification |
 
-### USER.md
-Context about the human(s) the agent works with - preferences, communication style, goals.
-
-### AGENTS.md
-Awareness of other agents in the system - who they are, how to collaborate.
+Each agent can have custom personality files: `SOUL.md`, `USER.md`, `AGENTS.md`.
 
 ## API Endpoints
 
@@ -154,6 +196,25 @@ Awareness of other agents in the system - who they are, how to collaborate.
 - `GET /api/tasks/[id]` - Get task
 - `PATCH /api/tasks/[id]` - Update task
 - `DELETE /api/tasks/[id]` - Delete task
+- `POST /api/tasks/[id]/dispatch` - Dispatch task to agent
+- `POST /api/tasks/[id]/retry` - Retry a failed task
+
+### Task Dependencies
+- `GET /api/tasks/[id]/dependencies` - List dependencies
+- `POST /api/tasks/[id]/dependencies` - Add dependency (with cycle detection)
+- `DELETE /api/tasks/[id]/dependencies/[depId]` - Remove dependency
+
+### Search
+- `GET /api/search?q=` - Full-text search across tasks and agents
+
+### Workflows
+- `POST /api/workflows` - Execute workflow template (creates tasks with dependencies)
+
+### Settings
+- `GET /api/settings/gateway` - Get gateway configuration
+- `POST /api/settings/gateway` - Update gateway configuration
+- `GET /api/settings/rate-limit` - Get rate limit settings
+- `POST /api/settings/rate-limit` - Update rate limit settings
 
 ### Conversations
 - `GET /api/conversations` - List conversations
@@ -162,7 +223,7 @@ Awareness of other agents in the system - who they are, how to collaborate.
 - `POST /api/conversations/[id]/messages` - Send message
 
 ### Events
-- `GET /api/events` - List events (live feed)
+- `GET /api/events` - SSE event stream (live feed)
 - `POST /api/events` - Create event
 
 ### OpenClaw
@@ -172,8 +233,9 @@ Awareness of other agents in the system - who they are, how to collaborate.
 - `GET /api/openclaw/sessions/[id]` - Get session details
 - `POST /api/openclaw/sessions/[id]` - Send message to session
 - `GET /api/openclaw/sessions/[id]/history` - Get session history
-- `PATCH /api/openclaw/sessions/[id]` - Update session (mark complete)
+- `PATCH /api/openclaw/sessions/[id]` - Update session
 - `DELETE /api/openclaw/sessions/[id]` - Delete a session
+- `GET /api/openclaw/models` - List available models
 
 ### Agent ↔ OpenClaw Linking
 - `GET /api/agents/[id]/openclaw` - Get agent's OpenClaw session
@@ -185,204 +247,29 @@ Awareness of other agents in the system - who they are, how to collaborate.
 - `POST /api/tasks/[id]/activities` - Log activity
 - `GET /api/tasks/[id]/deliverables` - List deliverables
 - `POST /api/tasks/[id]/deliverables` - Add deliverable
-- `GET /api/tasks/[id]/subagent` - List sub-agents
-- `POST /api/tasks/[id]/subagent` - Register sub-agent
 
 ### Files (for remote agents)
 - `POST /api/files/upload` - Upload file from remote agent
-- `GET /api/files/upload` - Get upload endpoint info
 - `POST /api/files/reveal` - Open file in Finder
 - `GET /api/files/preview` - Preview HTML file
 
 ### Webhooks
 - `POST /api/webhooks/agent-completion` - Agent completion notification
 
-## OpenClaw WebSocket Protocol
+## Tech Stack
 
-Mission Control connects to OpenClaw Gateway via WebSocket. The protocol uses **RequestFrame format** (not JSON-RPC).
-
-### Prerequisites
-
-1. **OpenClaw Gateway running** on your local machine or accessible via network
-2. **Authentication token** - Generate one with:
-   ```bash
-   openssl rand -hex 32
-   ```
-3. **Configure your Gateway** to accept the token (see OpenClaw docs)
-
-### Remote Access via Tailscale
-
-To connect from another machine:
-
-1. Install [Tailscale](https://tailscale.com) on both machines
-2. On the Gateway machine, expose the port:
-   ```bash
-   tailscale serve --bg 18789
-   ```
-3. Use the Tailscale URL in your `.env.local`:
-   ```bash
-   OPENCLAW_GATEWAY_URL=wss://your-machine.tail12345.ts.net
-   OPENCLAW_GATEWAY_TOKEN=your-64-char-hex-token
-   ```
-
-### Connection Flow
-
-```
-1. WebSocket Connect
-   Client → Gateway: wss://gateway?token=xxx
-
-2. Challenge (Gateway initiates)
-   Gateway → Client: {
-     "type": "event",
-     "event": "connect.challenge",
-     "payload": { "nonce": "uuid", "ts": 1234567890 }
-   }
-
-3. Connect Response (Client authenticates)
-   Client → Gateway: {
-     "type": "req",
-     "id": "uuid",
-     "method": "connect",
-     "params": {
-       "minProtocol": 3,
-       "maxProtocol": 3,
-       "client": { "id": "gateway-client", "version": "1.0.0", "platform": "web", "mode": "ui" },
-       "auth": { "token": "xxx" }
-     }
-   }
-
-4. Hello OK (Connection established)
-   Gateway → Client: {
-     "type": "res",
-     "id": "uuid",
-     "ok": true,
-     "payload": { "type": "hello-ok", "protocol": 3, ... }
-   }
-```
-
-### RequestFrame Format
-
-All requests after connection use this format:
-
-```typescript
-// Request
-{
-  type: "req",
-  id: crypto.randomUUID(),  // Unique ID for matching responses
-  method: "sessions.list",   // Method name
-  params: { ... }            // Method-specific parameters
-}
-
-// Success Response
-{
-  type: "res",
-  id: "matching-request-id",
-  ok: true,
-  payload: { ... }
-}
-
-// Error Response
-{
-  type: "res",
-  id: "matching-request-id",
-  ok: false,
-  error: { code: "ERROR_CODE", message: "Description" }
-}
-```
-
-### Available Session Methods
-
-| Method | Description |
-|--------|-------------|
-| `sessions.list` | List all sessions |
-| `sessions.preview` | Preview session content |
-| `sessions.patch` | Update session |
-| `sessions.reset` | Reset session state |
-| `sessions.delete` | Delete session |
-| `sessions.compact` | Compact session history |
-
-> **Note**: There is no `sessions.create` method. Sessions are created automatically when you send messages.
-
-### Troubleshooting
-
-| Error | Cause | Fix |
-|-------|-------|-----|
-| `invalid request frame` | Wrong message format | Use `type: "req"` not `jsonrpc: "2.0"` |
-| `invalid request frame` | Sent message before challenge | Wait for `connect.challenge` event first |
-| `protocol version mismatch` | Wrong protocol version | Use `minProtocol: 3, maxProtocol: 3` |
-| `device identity required` | Missing auth token | Include token in both URL query AND `params.auth` |
-| `invalid mode` | Wrong client mode | Use `mode: "ui"` (not `dashboard`) |
-| `WebSocket error` (no connect) | Gateway not running | Start OpenClaw Gateway first |
-| `WebSocket error` (remote) | Tailscale not connected | Check `tailscale status` on both machines |
-
-### What Doesn't Work
-
-These approaches were tried and **do not work**:
-
-- ❌ JSON-RPC format (`jsonrpc: "2.0"`) - Gateway expects RequestFrame
-- ❌ `auth.login` method - Use `connect` method instead
-- ❌ Sending `connect` immediately on open - Must wait for challenge first
-- ❌ Token only in URL - Must also include in `params.auth`
-- ❌ Token only in params - Must also include in URL query string
-- ❌ `mode: "dashboard"` - Use `mode: "ui"` instead
-- ❌ Protocol version 1 - Use version 3
-
-### Valid Client Identifiers
-
-| client.id | client.mode |
-|-----------|-------------|
-| `gateway-client` | `ui` |
-| `webchat-ui` | `webchat` |
-| `cli` | `cli` |
-| `clawdbot-control-ui` | `ui` |
-
-## Cross-Machine Orchestration
-
-Mission Control supports orchestration across multiple machines. For example:
-- **Mission Control** runs on your M4 Mac (server)
-- **Charlie** (orchestrating LLM) runs on an M1 Mac (client)
-
-### How It Works
-
-Since Charlie can't directly write to the M4's filesystem, use the **File Upload API**:
-
-```bash
-# 1. Charlie uploads file content via HTTP
-curl -X POST http://192.168.0.216:3000/api/files/upload \
-  -H "Content-Type: application/json" \
-  -d '{
-    "relativePath": "project-name/index.html",
-    "content": "<!DOCTYPE html>..."
-  }'
-
-# Response: {"path": "/Users/chris/mission-control-projects/project-name/index.html", ...}
-
-# 2. Register the deliverable using the returned path
-curl -X POST http://192.168.0.216:3000/api/tasks/{TASK_ID}/deliverables \
-  -H "Content-Type: application/json" \
-  -d '{
-    "deliverable_type": "file",
-    "title": "Homepage",
-    "path": "/Users/chris/mission-control-projects/project-name/index.html"
-  }'
-```
-
-See `HEARTBEAT.md` for full orchestration instructions that can be injected into your LLM's context.
-
-## Charlie (or your Master Agents Name, Charlie is mine) - The Master Orchestrator 🦞
-
-Charlie is the default master agent who coordinates all other agents. Charlie:
-
-- Receives and triages incoming tasks
-- Assigns work to appropriate agents
-- Facilitates team collaboration
-- Monitors progress and quality
-- Reports to the human
+- **Framework**: Next.js 16 (App Router)
+- **Language**: TypeScript
+- **Styling**: Tailwind CSS
+- **Database**: SQLite (better-sqlite3) with FTS5
+- **State**: Zustand
+- **Icons**: Lucide React
+- **Real-time**: Server-Sent Events (SSE)
 
 ## Development
 
 ```bash
-# Run development server with hot reload
+# Run development server (port 3001)
 npm run dev
 
 # Build for production
@@ -409,16 +296,6 @@ npm run db:reset
 # Lint code
 npm run lint
 ```
-
-## Tech Stack
-
-- **Framework**: Next.js 14 (App Router)
-- **Language**: TypeScript
-- **Styling**: Tailwind CSS
-- **Database**: SQLite (better-sqlite3)
-- **State**: Zustand
-- **Drag & Drop**: @hello-pangea/dnd
-- **Icons**: Lucide React
 
 ## License
 
