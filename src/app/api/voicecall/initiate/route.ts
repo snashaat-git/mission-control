@@ -27,6 +27,16 @@ export async function POST(request: NextRequest) {
       to: phoneNumber,
     });
 
+    console.log('[VoiceCall] Gateway response:', JSON.stringify(result));
+
+    // Extract callId from response — gateway may return different shapes
+    const callId = (result as any)?.callId
+      || (result as any)?.call_id
+      || (result as any)?.sid
+      || (result as any)?.callSid
+      || (result as any)?.id
+      || crypto.randomUUID();
+
     // Determine session key from agent or fallback
     let sessionKey = 'agent:main:main';
     if (agentId) {
@@ -45,14 +55,14 @@ export async function POST(request: NextRequest) {
     run(
       `INSERT INTO call_logs (id, agent_id, session_key, call_id, phone_number, direction, status, created_at)
        VALUES (?, ?, ?, ?, ?, 'outbound', 'initiating', ?)`,
-      [id, agentId || null, sessionKey, result.callId, phoneNumber, now]
+      [id, agentId || null, sessionKey, callId, phoneNumber, now]
     );
 
     const callLog: VoiceCall = {
       id,
       agent_id: agentId || undefined,
       session_key: sessionKey,
-      call_id: result.callId,
+      call_id: callId,
       phone_number: phoneNumber,
       direction: 'outbound',
       status: 'initiating',
