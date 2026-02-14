@@ -7,7 +7,7 @@
 
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
-import { Settings, Save, RotateCcw, Home, FolderOpen, Link as LinkIcon, Radio, Eye, EyeOff, Zap, Bell, Sun, Moon, Shield } from 'lucide-react';
+import { Settings, Save, RotateCcw, Home, FolderOpen, Link as LinkIcon, Radio, Eye, EyeOff, Zap, Bell, Sun, Moon, Shield, Phone } from 'lucide-react';
 import { getConfig, updateConfig, resetConfig, type MissionControlConfig } from '@/lib/config';
 import { getNotificationSettings, setNotificationsEnabled, requestNotificationPermission } from '@/hooks/useNotifications';
 import { useTheme } from '@/hooks/useTheme';
@@ -42,6 +42,15 @@ export default function SettingsPage() {
   }
   const [rateLimitTiers, setRateLimitTiers] = useState<RateLimitTier[]>([]);
   const [rateLimitSaving, setRateLimitSaving] = useState(false);
+
+  // Voice call settings (client-side)
+  const [voiceDefaultNumber, setVoiceDefaultNumber] = useState('');
+  const [voiceInboundPolicy, setVoiceInboundPolicy] = useState('allowlist');
+
+  useEffect(() => {
+    setVoiceDefaultNumber(localStorage.getItem('mc-voice-default-number') || '');
+    setVoiceInboundPolicy(localStorage.getItem('mc-voice-inbound-policy') || 'allowlist');
+  }, []);
 
   // Notification settings (client-side only)
   const [notifEnabled, setNotifEnabled] = useState(false);
@@ -611,6 +620,60 @@ export default function SettingsPage() {
                 Notifications are blocked by the browser. To re-enable, click the lock icon in the address bar and allow notifications for this site.
               </div>
             )}
+          </div>
+        </section>
+
+        {/* Voice Calls */}
+        <section className="mb-8 p-6 bg-mc-bg-secondary border border-mc-border rounded-lg">
+          <div className="flex items-center gap-2 mb-4">
+            <Phone className="w-5 h-5 text-mc-accent" />
+            <h2 className="text-xl font-semibold text-mc-text">Voice Calls</h2>
+          </div>
+          <p className="text-sm text-mc-text-secondary mb-4">
+            Configure voice call settings for the OpenClaw voice-call plugin.
+            Requires the plugin to be installed: <code className="px-1 py-0.5 bg-mc-bg rounded text-xs">openclaw plugins install @openclaw/voice-call</code>
+          </p>
+
+          <div className="space-y-4">
+            <div>
+              <label className="block text-sm font-medium text-mc-text mb-2">
+                Default From Number
+              </label>
+              <input
+                type="tel"
+                value={voiceDefaultNumber}
+                onChange={(e) => {
+                  setVoiceDefaultNumber(e.target.value);
+                  localStorage.setItem('mc-voice-default-number', e.target.value);
+                }}
+                placeholder="+1 555 000 1234"
+                className="w-full px-4 py-2 bg-mc-bg border border-mc-border rounded text-mc-text focus:border-mc-accent focus:outline-none"
+              />
+              <p className="text-xs text-mc-text-secondary mt-1">
+                Default outbound phone number. Set in your OpenClaw voice-call plugin config.
+              </p>
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium text-mc-text mb-2">
+                Inbound Call Policy
+              </label>
+              <select
+                value={voiceInboundPolicy}
+                onChange={(e) => {
+                  setVoiceInboundPolicy(e.target.value);
+                  localStorage.setItem('mc-voice-inbound-policy', e.target.value);
+                }}
+                className="w-full px-4 py-2 bg-mc-bg border border-mc-border rounded text-mc-text focus:border-mc-accent focus:outline-none"
+              >
+                <option value="block">Block all inbound calls</option>
+                <option value="allowlist">Allowlist only (configured in plugin)</option>
+                <option value="open">Accept all inbound calls</option>
+              </select>
+              <p className="text-xs text-mc-text-secondary mt-1">
+                Controls who can call your agents. Configure the allowlist in your OpenClaw voice-call plugin config.
+              </p>
+            </div>
           </div>
         </section>
 

@@ -134,6 +134,21 @@ export function useSSE() {
                 .catch(() => {});
               break;
 
+            case 'call_started':
+              debug.sse('Call started', sseEvent.payload);
+              notify('Call Started', { body: 'Outbound call initiated', tag: 'call-started' });
+              break;
+
+            case 'call_ended':
+              debug.sse('Call ended', sseEvent.payload);
+              notify('Call Ended', { body: 'Voice call completed', tag: 'call-ended' });
+              break;
+
+            case 'call_failed':
+              debug.sse('Call failed', sseEvent.payload);
+              notify('Call Failed', { body: 'Voice call failed', tag: 'call-failed' });
+              break;
+
             default:
               debug.sse('Unknown event type', sseEvent);
           }

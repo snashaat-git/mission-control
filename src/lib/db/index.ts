@@ -226,6 +226,38 @@ function runMigrations(db: Database.Database): void {
   } catch (e) {
     console.log('[DB Migration] FTS5 migration skipped/failed:', e);
   }
+
+  // Migration: Create call_logs table for voice calls
+  try {
+    const tableExists = db.prepare(
+      `SELECT name FROM sqlite_master WHERE type='table' AND name='call_logs'`
+    ).get();
+    if (!tableExists) {
+      console.log('[DB Migration] Creating call_logs table...');
+      db.exec(`
+        CREATE TABLE IF NOT EXISTS call_logs (
+          id TEXT PRIMARY KEY,
+          agent_id TEXT REFERENCES agents(id) ON DELETE SET NULL,
+          session_key TEXT NOT NULL,
+          call_id TEXT NOT NULL UNIQUE,
+          phone_number TEXT NOT NULL,
+          direction TEXT DEFAULT 'outbound' CHECK (direction IN ('inbound', 'outbound')),
+          status TEXT DEFAULT 'initiating' CHECK (status IN ('initiating', 'active', 'ended', 'failed')),
+          duration_seconds INTEGER DEFAULT 0,
+          transcript TEXT,
+          summary TEXT,
+          created_at TEXT DEFAULT (datetime('now')),
+          ended_at TEXT
+        );
+        CREATE INDEX IF NOT EXISTS idx_call_logs_agent ON call_logs(agent_id, created_at DESC);
+        CREATE INDEX IF NOT EXISTS idx_call_logs_status ON call_logs(status);
+        CREATE INDEX IF NOT EXISTS idx_call_logs_call_id ON call_logs(call_id);
+      `);
+      console.log('[DB Migration] call_logs table created');
+    }
+  } catch (e) {
+    console.log('[DB Migration] call_logs migration skipped/failed:', e);
+  }
 }
 
 export function closeDb(): void {

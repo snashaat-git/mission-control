@@ -237,7 +237,10 @@ export type SSEEventType =
   | 'deliverable_added'
   | 'agent_spawned'
   | 'agent_completed'
-  | 'dependency_changed';
+  | 'dependency_changed'
+  | 'call_started'
+  | 'call_ended'
+  | 'call_failed';
 
 export interface SSEEvent {
   type: SSEEventType;
@@ -274,6 +277,38 @@ export interface Prompt {
   // Joined fields
   agent_name?: string;
   agent_emoji?: string;
+}
+
+// Voice call types
+export type CallStatus = 'initiating' | 'active' | 'ended' | 'failed';
+export type CallDirection = 'inbound' | 'outbound';
+
+export interface VoiceCall {
+  id: string;
+  agent_id?: string;
+  session_key: string;
+  call_id: string;
+  phone_number: string;
+  direction: CallDirection;
+  status: CallStatus;
+  duration_seconds: number;
+  transcript?: string;
+  summary?: string;
+  created_at: string;
+  ended_at?: string;
+  // Joined fields
+  agent_name?: string;
+  agent_emoji?: string;
+}
+
+export interface InitiateCallRequest {
+  agentId?: string;
+  phoneNumber: string;
+  message: string;
+}
+
+export interface ContinueCallRequest {
+  message: string;
 }
 
 // Note: Antigravity Bridge integration removed

@@ -2,10 +2,11 @@
 
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
-import { Zap, Settings, Library, AlertTriangle, X, Mic } from 'lucide-react';
+import { Zap, Settings, Library, AlertTriangle, X, Mic, Phone } from 'lucide-react';
 import { useMissionControl } from '@/lib/store';
 import { PromptsLibrary } from './PromptsLibrary';
 import { VoiceInterface } from './VoiceInterface';
+import { VoiceCallModal } from './VoiceCallModal';
 import { format } from 'date-fns';
 import type { Task, TaskStatus } from '@/lib/types';
 
@@ -95,6 +96,7 @@ export function Header() {
   const [activeSubAgents, setActiveSubAgents] = useState(0);
   const [showPromptsLibrary, setShowPromptsLibrary] = useState(false);
   const [showVoiceInterface, setShowVoiceInterface] = useState(false);
+  const [showVoiceCall, setShowVoiceCall] = useState(false);
   const [bottlenecks, setBottlenecks] = useState<Bottleneck[]>([]);
   const [dismissedAlerts, setDismissedAlerts] = useState<Set<string>>(new Set());
 
@@ -217,6 +219,14 @@ export function Header() {
             <Library className="w-5 h-5" />
           </button>
           <button
+            onClick={() => setShowVoiceCall(true)}
+            className="p-2 hover:bg-mc-bg-tertiary rounded text-mc-text-secondary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-mc-accent focus-visible:ring-offset-1 focus-visible:ring-offset-mc-bg"
+            title="Voice Call"
+            aria-label="Voice Call"
+          >
+            <Phone className="w-5 h-5" />
+          </button>
+          <button
             onClick={() => setShowVoiceInterface(true)}
             className="p-2 hover:bg-mc-bg-tertiary rounded text-mc-text-secondary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-mc-accent focus-visible:ring-offset-1 focus-visible:ring-offset-mc-bg"
             title="Voice Control"
@@ -246,9 +256,15 @@ export function Header() {
         )}
 
         {/* Prompts Library Modal */}
-        <PromptsLibrary 
-          isOpen={showPromptsLibrary} 
-          onClose={() => setShowPromptsLibrary(false)} 
+        <PromptsLibrary
+          isOpen={showPromptsLibrary}
+          onClose={() => setShowPromptsLibrary(false)}
+        />
+
+        {/* Voice Call Modal */}
+        <VoiceCallModal
+          isOpen={showVoiceCall}
+          onClose={() => setShowVoiceCall(false)}
         />
       </header>
 

@@ -453,6 +453,27 @@ export class OpenClawClient extends EventEmitter {
     return this.call<OpenClawSessionInfo>('sessions.create', { channel, peer });
   }
 
+  // Voice call methods
+  async initiateCall(params: { message: string; to?: string; mode?: string }): Promise<{ callId: string }> {
+    return this.call<{ callId: string }>('voicecall.initiate', params);
+  }
+
+  async continueCall(callId: string, message: string): Promise<void> {
+    await this.call('voicecall.continue', { callId, message });
+  }
+
+  async speakToUser(callId: string, message: string): Promise<void> {
+    await this.call('voicecall.speak', { callId, message });
+  }
+
+  async endCall(callId: string): Promise<void> {
+    await this.call('voicecall.end', { callId });
+  }
+
+  async getCallStatus(callId: string): Promise<{ callId: string; status: string; duration?: number; transcript?: string }> {
+    return this.call('voicecall.status', { callId });
+  }
+
   // Node methods (device capabilities)
   async listNodes(): Promise<unknown[]> {
     return this.call<unknown[]>('node.list');

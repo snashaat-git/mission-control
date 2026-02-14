@@ -2,7 +2,7 @@
 
 import { create } from 'zustand';
 import { debug } from './debug';
-import type { Agent, Task, Conversation, Message, Event, TaskStatus, OpenClawSession } from './types';
+import type { Agent, Task, Conversation, Message, Event, TaskStatus, OpenClawSession, VoiceCall } from './types';
 
 interface MissionControlState {
   // Data
@@ -16,6 +16,10 @@ interface MissionControlState {
   // OpenClaw state
   agentOpenClawSessions: Record<string, OpenClawSession | null>; // agentId -> session
   openclawMessages: Message[]; // Messages from OpenClaw (displayed alongside regular messages)
+
+  // Voice call state
+  voiceCalls: VoiceCall[];
+  activeCall: VoiceCall | null;
 
   // UI State
   selectedAgent: Agent | null;
@@ -48,6 +52,12 @@ interface MissionControlState {
   updateAgent: (agent: Agent) => void;
   addAgent: (agent: Agent) => void;
 
+  // Voice call actions
+  setVoiceCalls: (calls: VoiceCall[]) => void;
+  addVoiceCall: (call: VoiceCall) => void;
+  updateVoiceCall: (call: VoiceCall) => void;
+  setActiveCall: (call: VoiceCall | null) => void;
+
   // OpenClaw actions
   setAgentOpenClawSession: (agentId: string, session: OpenClawSession | null) => void;
   setOpenclawMessages: (messages: Message[]) => void;
@@ -64,6 +74,8 @@ export const useMissionControl = create<MissionControlState>((set) => ({
   messages: [],
   agentOpenClawSessions: {},
   openclawMessages: [],
+  voiceCalls: [],
+  activeCall: null,
   selectedAgent: null,
   selectedTask: null,
   isOnline: false,
@@ -145,6 +157,21 @@ export const useMissionControl = create<MissionControlState>((set) => ({
       ),
     })),
   addAgent: (agent) => set((state) => ({ agents: [...state.agents, agent] })),
+
+  // Voice call actions
+  setVoiceCalls: (calls) => set({ voiceCalls: calls }),
+  addVoiceCall: (call) =>
+    set((state) => {
+      if (state.voiceCalls.some((c) => c.id === call.id)) return state;
+      return { voiceCalls: [call, ...state.voiceCalls] };
+    }),
+  updateVoiceCall: (updatedCall) =>
+    set((state) => ({
+      voiceCalls: state.voiceCalls.map((call) =>
+        call.id === updatedCall.id ? updatedCall : call
+      ),
+    })),
+  setActiveCall: (call) => set({ activeCall: call }),
 
   // OpenClaw actions
   setAgentOpenClawSession: (agentId, session) =>

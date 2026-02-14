@@ -1,11 +1,12 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { Plus, ChevronRight, Zap, ZapOff, Loader2, MessageSquare, X } from 'lucide-react';
+import { Plus, ChevronRight, Zap, ZapOff, Loader2, MessageSquare, X, Phone } from 'lucide-react';
 import { useMissionControl } from '@/lib/store';
 import type { Agent, AgentStatus, OpenClawSession } from '@/lib/types';
 import { AgentModal } from './AgentModal';
 import { SessionView } from './SessionView';
+import { VoiceCallModal } from './VoiceCallModal';
 import { useToast } from '@/hooks/useToast';
 
 type FilterTab = 'all' | 'working' | 'standby';
@@ -19,6 +20,7 @@ export function AgentsSidebar() {
   const [connectingAgentId, setConnectingAgentId] = useState<string | null>(null);
   const [activeSubAgents, setActiveSubAgents] = useState(0);
   const [liveViewAgent, setLiveViewAgent] = useState<{ sessionId: string; agent: Agent } | null>(null);
+  const [callAgentId, setCallAgentId] = useState<string | null>(null);
 
   // Load OpenClaw session status for all agents on mount
   useEffect(() => {
@@ -233,16 +235,29 @@ export function AgentsSidebar() {
                     )}
                   </button>
                   {openclawSession && (
-                    <button
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        setLiveViewAgent({ sessionId: openclawSession.openclaw_session_id, agent });
-                      }}
-                      className="w-full flex items-center justify-center gap-2 px-2 py-1 rounded text-xs bg-mc-bg text-mc-text-secondary hover:bg-mc-bg-tertiary hover:text-mc-accent transition-colors"
-                    >
-                      <MessageSquare className="w-3 h-3" />
-                      <span>Live View</span>
-                    </button>
+                    <div className="flex gap-1">
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setLiveViewAgent({ sessionId: openclawSession.openclaw_session_id, agent });
+                        }}
+                        className="flex-1 flex items-center justify-center gap-2 px-2 py-1 rounded text-xs bg-mc-bg text-mc-text-secondary hover:bg-mc-bg-tertiary hover:text-mc-accent transition-colors"
+                      >
+                        <MessageSquare className="w-3 h-3" />
+                        <span>Live View</span>
+                      </button>
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setCallAgentId(agent.id);
+                        }}
+                        className="flex items-center justify-center gap-1 px-2 py-1 rounded text-xs bg-mc-bg text-mc-text-secondary hover:bg-mc-bg-tertiary hover:text-mc-accent-green transition-colors"
+                        aria-label={`Call via ${agent.name}`}
+                      >
+                        <Phone className="w-3 h-3" />
+                        <span>Call</span>
+                      </button>
+                    </div>
                   )}
                 </div>
               )}
@@ -294,6 +309,13 @@ export function AgentsSidebar() {
           </div>
         </div>
       )}
+
+      {/* Voice Call Modal */}
+      <VoiceCallModal
+        isOpen={!!callAgentId}
+        onClose={() => setCallAgentId(null)}
+        prefillAgentId={callAgentId || undefined}
+      />
     </aside>
   );
 }
