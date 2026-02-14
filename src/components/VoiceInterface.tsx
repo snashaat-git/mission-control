@@ -79,7 +79,7 @@ export function VoiceInterface({ onCommand }: VoiceInterfaceProps) {
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm">
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm" role="dialog" aria-modal="true" aria-labelledby="voice-assistant-title">
       <div className="bg-mc-bg-secondary border border-mc-border rounded-2xl shadow-2xl w-full max-w-md mx-4 overflow-hidden">
         {/* Header */}
         <div className="p-4 border-b border-mc-border flex items-center justify-between">
@@ -87,11 +87,12 @@ export function VoiceInterface({ onCommand }: VoiceInterfaceProps) {
             <div className="w-8 h-8 rounded-lg bg-mc-accent/20 flex items-center justify-center">
               <Command className="w-4 h-4 text-mc-accent" />
             </div>
-            <span className="font-semibold">Voice Assistant</span>
+            <span id="voice-assistant-title" className="font-semibold">Voice Assistant</span>
           </div>
           <button
             onClick={() => setIsOpen(false)}
-            className="p-2 hover:bg-mc-bg-tertiary rounded-lg transition-colors"
+            className="p-2 hover:bg-mc-bg-tertiary rounded-lg transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-mc-accent"
+            aria-label="Close"
           >
             <X className="w-5 h-5" />
           </button>

@@ -24,13 +24,15 @@ CREATE TABLE IF NOT EXISTS tasks (
   id TEXT PRIMARY KEY,
   title TEXT NOT NULL,
   description TEXT,
-  status TEXT DEFAULT 'inbox' CHECK (status IN ('inbox', 'assigned', 'in_progress', 'testing', 'review', 'done')),
+  status TEXT DEFAULT 'inbox' CHECK (status IN ('inbox', 'assigned', 'in_progress', 'testing', 'review', 'done', 'failed')),
   priority TEXT DEFAULT 'normal' CHECK (priority IN ('low', 'normal', 'high', 'urgent')),
   assigned_agent_id TEXT REFERENCES agents(id),
   created_by_agent_id TEXT REFERENCES agents(id),
   business_id TEXT DEFAULT 'default',
   due_date TEXT,
   output_dir TEXT,
+  retry_count INTEGER DEFAULT 0,
+  max_retries INTEGER DEFAULT 2,
   created_at TEXT DEFAULT (datetime('now')),
   updated_at TEXT DEFAULT (datetime('now'))
 );
@@ -135,6 +137,15 @@ CREATE TABLE IF NOT EXISTS prompts (
   updated_at TEXT DEFAULT (datetime('now'))
 );
 
+-- Task dependencies (many-to-many junction table)
+CREATE TABLE IF NOT EXISTS task_dependencies (
+  task_id TEXT NOT NULL REFERENCES tasks(id) ON DELETE CASCADE,
+  dependency_id TEXT NOT NULL REFERENCES tasks(id) ON DELETE CASCADE,
+  created_at TEXT DEFAULT (datetime('now')),
+  PRIMARY KEY (task_id, dependency_id),
+  CHECK (task_id != dependency_id)
+);
+
 -- Indexes for performance
 CREATE INDEX IF NOT EXISTS idx_tasks_status ON tasks(status);
 CREATE INDEX IF NOT EXISTS idx_tasks_assigned ON tasks(assigned_agent_id);
@@ -150,4 +161,6 @@ CREATE INDEX IF NOT EXISTS idx_deliverables_task ON task_deliverables(task_id);
 CREATE INDEX IF NOT EXISTS idx_openclaw_sessions_task ON openclaw_sessions(task_id);
 CREATE INDEX IF NOT EXISTS idx_prompts_category ON prompts(category);
 CREATE INDEX IF NOT EXISTS idx_prompts_agent ON prompts(agent_id);
+CREATE INDEX IF NOT EXISTS idx_task_deps_task ON task_dependencies(task_id);
+CREATE INDEX IF NOT EXISTS idx_task_deps_dep ON task_dependencies(dependency_id);
 `;

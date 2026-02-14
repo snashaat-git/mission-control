@@ -17,6 +17,7 @@ const STUCK_THRESHOLDS: Record<TaskStatus, number> = {
   'testing': 1440,
   'review': 480,
   'done': Infinity,
+  'failed': Infinity,
 };
 
 interface Bottleneck {
@@ -209,22 +210,25 @@ export function Header() {
           </div>
           <button
             onClick={() => setShowPromptsLibrary(true)}
-            className="p-2 hover:bg-mc-bg-tertiary rounded text-mc-text-secondary"
+            className="p-2 hover:bg-mc-bg-tertiary rounded text-mc-text-secondary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-mc-accent focus-visible:ring-offset-1 focus-visible:ring-offset-mc-bg"
             title="Prompts Library"
+            aria-label="Prompts Library"
           >
             <Library className="w-5 h-5" />
           </button>
           <button
             onClick={() => setShowVoiceInterface(true)}
-            className="p-2 hover:bg-mc-bg-tertiary rounded text-mc-text-secondary"
+            className="p-2 hover:bg-mc-bg-tertiary rounded text-mc-text-secondary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-mc-accent focus-visible:ring-offset-1 focus-visible:ring-offset-mc-bg"
             title="Voice Control"
+            aria-label="Voice Control"
           >
             <Mic className="w-5 h-5" />
           </button>
           <button
             onClick={() => router.push('/settings')}
-            className="p-2 hover:bg-mc-bg-tertiary rounded text-mc-text-secondary"
+            className="p-2 hover:bg-mc-bg-tertiary rounded text-mc-text-secondary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-mc-accent focus-visible:ring-offset-1 focus-visible:ring-offset-mc-bg"
             title="Settings"
+            aria-label="Settings"
           >
             <Settings className="w-5 h-5" />
           </button>
@@ -264,8 +268,9 @@ export function Header() {
               </div>
               <button
                 onClick={() => dismissBottleneck(bottleneck.message)}
-                className="p-1 hover:bg-black/10 rounded"
+                className="p-1 hover:bg-black/10 rounded focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-mc-accent"
                 title="Dismiss"
+                aria-label="Dismiss alert"
               >
                 <X className="w-4 h-4" />
               </button>

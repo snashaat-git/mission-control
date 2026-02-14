@@ -6,12 +6,60 @@ import fs from 'fs';
 import path from 'path';
 import type { OpenClawMessage, OpenClawSessionInfo } from '../types';
 
+// Load device identity from ~/.openclaw/identity/
+interface DeviceIdentity {
+  deviceId: string;
+  publicKeyPem: string;
+  privateKeyPem: string;
+}
+
+interface DeviceAuth {
+  deviceId: string;
+  tokens: Record<string, { token: string; role: string; scopes: string[] }>;
+}
+
+function loadDeviceIdentity(): { identity: DeviceIdentity | null; auth: DeviceAuth | null; gatewayToken: string | null } {
+  const openclawBase = path.join(process.env.HOME || '/root', '.openclaw');
+  const openclawDir = path.join(openclawBase, 'identity');
+  try {
+    const identityPath = path.join(openclawDir, 'device.json');
+    const authPath = path.join(openclawDir, 'device-auth.json');
+    const configPath = path.join(openclawBase, 'openclaw.json');
+
+    const identity = fs.existsSync(identityPath)
+      ? JSON.parse(fs.readFileSync(identityPath, 'utf-8')) as DeviceIdentity
+      : null;
+
+    const auth = fs.existsSync(authPath)
+      ? JSON.parse(fs.readFileSync(authPath, 'utf-8')) as DeviceAuth
+      : null;
+
+    // Read the gateway auth token from openclaw.json
+    let gatewayToken: string | null = null;
+    if (fs.existsSync(configPath)) {
+      const config = JSON.parse(fs.readFileSync(configPath, 'utf-8'));
+      gatewayToken = config?.gateway?.auth?.token || null;
+      if (gatewayToken) {
+        console.log('[OpenClaw Client] Loaded gateway auth token from openclaw.json');
+      }
+    }
+
+    if (identity) {
+      console.log('[OpenClaw Client] Loaded device identity:', identity.deviceId.slice(0, 12) + '...');
+    }
+
+    return { identity, auth, gatewayToken };
+  } catch (error) {
+    console.warn('[OpenClaw Client] Could not load device identity:', error);
+    return { identity: null, auth: null, gatewayToken: null };
+  }
+}
+
 // Helper to load env vars from .env.local if not already set
 function loadEnvLocal(): void {
   if (process.env.OPENCLAW_GATEWAY_TOKEN) return; // Already set, skip
 
   try {
-    // Try to find .env.local in project root (3 levels up from src/lib/openclaw/)
     const possiblePaths = [
       path.join(process.cwd(), '.env.local'),
       path.join(process.cwd(), '..', '.env.local'),
@@ -47,12 +95,15 @@ loadEnvLocal();
 
 const GATEWAY_URL = process.env.OPENCLAW_GATEWAY_URL || 'ws://127.0.0.1:18789';
 const GATEWAY_TOKEN = process.env.OPENCLAW_GATEWAY_TOKEN || '';
+const DEVICE_INFO = loadDeviceIdentity();
 
-// Log token status at module load (for debugging)
-if (GATEWAY_TOKEN) {
-  console.log('[OpenClaw Client] Gateway token loaded (length:', GATEWAY_TOKEN.length, ')');
+// Derive effective token: prefer env var, fall back to gateway config token
+const EFFECTIVE_TOKEN = GATEWAY_TOKEN || DEVICE_INFO.gatewayToken || '';
+
+if (EFFECTIVE_TOKEN) {
+  console.log('[OpenClaw Client] Using token (length:', EFFECTIVE_TOKEN.length, ')');
 } else {
-  console.warn('[OpenClaw Client] WARNING: Gateway token is empty! Auth will fail.');
+  console.warn('[OpenClaw Client] WARNING: No gateway token found! Auth will fail.');
 }
 
 export class OpenClawClient extends EventEmitter {
@@ -64,11 +115,14 @@ export class OpenClawClient extends EventEmitter {
   private authenticated = false; // Track auth state separately from connection state
   private connecting: Promise<void> | null = null; // Lock to prevent multiple simultaneous connection attempts
   private autoReconnect = true;
-  private token: string;
+  private gatewayToken: string; // Token for URL auth (gateway door)
+  private operatorToken: string; // Token for connect request (scoped permissions)
 
-  constructor(private url: string = GATEWAY_URL, token: string = GATEWAY_TOKEN) {
+  constructor(private url: string = GATEWAY_URL, token?: string) {
     super();
-    this.token = token;
+    // Use a single token: gateway auth token for both URL and connect request
+    this.gatewayToken = token ?? EFFECTIVE_TOKEN;
+    this.operatorToken = this.gatewayToken;
     // Prevent Node.js from throwing on unhandled 'error' events
     this.on('error', () => {});
   }
@@ -99,10 +153,10 @@ export class OpenClawClient extends EventEmitter {
           this.ws = null;
         }
 
-        // Add token to URL query string for Gateway authentication
+        // Add gateway token to URL query string for Gateway authentication
         const wsUrl = new URL(this.url);
-        if (this.token) {
-          wsUrl.searchParams.set('token', this.token);
+        if (this.gatewayToken) {
+          wsUrl.searchParams.set('token', this.gatewayToken);
         }
         console.log('[OpenClaw] Connecting to:', wsUrl.toString().replace(/token=[^&]+/, 'token=***'));
         console.log('[OpenClaw] Token in URL:', wsUrl.searchParams.has('token'));
@@ -156,6 +210,48 @@ export class OpenClawClient extends EventEmitter {
             if (data.type === 'event' && data.event === 'connect.challenge') {
               console.log('[OpenClaw] Challenge received, responding...');
               const requestId = crypto.randomUUID();
+              const nonce = data.payload?.nonce as string | undefined;
+              const scopes = ['operator.admin', 'operator.read', 'operator.write', 'operator.approvals', 'operator.pairing'];
+
+              // Build device auth if identity is available
+              let device: Record<string, unknown> | undefined;
+              if (DEVICE_INFO.identity) {
+                const signedAtMs = Date.now();
+                const payloadVersion = nonce ? 'v2' : 'v1';
+                const payloadParts = [
+                  payloadVersion,
+                  DEVICE_INFO.identity.deviceId,
+                  'gateway-client',    // clientId
+                  'backend',           // clientMode
+                  'operator',          // role
+                  scopes.join(','),    // scopes
+                  String(signedAtMs),  // signedAtMs
+                  this.gatewayToken,   // token
+                ];
+                if (payloadVersion === 'v2') payloadParts.push(nonce ?? '');
+                const payload = payloadParts.join('|');
+
+                // Sign with Ed25519 private key
+                const privateKey = crypto.createPrivateKey(DEVICE_INFO.identity.privateKeyPem);
+                const signatureBuf = crypto.sign(null, Buffer.from(payload, 'utf8'), privateKey);
+                const signatureB64Url = signatureBuf.toString('base64').replaceAll('+', '-').replaceAll('/', '_').replace(/=+$/g, '');
+
+                // Derive raw public key (base64url encoded)
+                const spki = crypto.createPublicKey(DEVICE_INFO.identity.publicKeyPem).export({ type: 'spki', format: 'der' });
+                const ED25519_SPKI_PREFIX_LEN = 12; // standard ASN.1 prefix for Ed25519
+                const rawKey = spki.subarray(ED25519_SPKI_PREFIX_LEN);
+                const publicKeyB64Url = rawKey.toString('base64').replaceAll('+', '-').replaceAll('/', '_').replace(/=+$/g, '');
+
+                device = {
+                  id: DEVICE_INFO.identity.deviceId,
+                  publicKey: publicKeyB64Url,
+                  signature: signatureB64Url,
+                  signedAt: signedAtMs,
+                  nonce,
+                };
+                console.log('[OpenClaw] Device auth prepared, deviceId:', DEVICE_INFO.identity.deviceId.slice(0, 12) + '...');
+              }
+
               const response = {
                 type: 'req',
                 id: requestId,
@@ -166,12 +262,15 @@ export class OpenClawClient extends EventEmitter {
                   client: {
                     id: 'gateway-client',
                     version: '1.0.0',
-                    platform: 'web',
-                    mode: 'ui'
+                    platform: process.platform,
+                    mode: 'backend'
                   },
                   auth: {
-                    token: this.token
-                  }
+                    token: this.gatewayToken
+                  },
+                  role: 'operator',
+                  scopes,
+                  device,
                 }
               };
 
@@ -400,4 +499,19 @@ export function getOpenClawClient(): OpenClawClient {
     clientInstance = new OpenClawClient();
   }
   return clientInstance;
+}
+
+/**
+ * Reset the singleton client (e.g., after settings change).
+ * Disconnects the existing client and creates a fresh one on next getOpenClawClient() call.
+ */
+export function resetOpenClawClient(): void {
+  if (clientInstance) {
+    clientInstance.disconnect();
+    clientInstance = null;
+  }
+  // Re-read env vars (in case .env.local was updated)
+  loadEnvLocal();
+  // Reload device identity and gateway token
+  Object.assign(DEVICE_INFO, loadDeviceIdentity());
 }

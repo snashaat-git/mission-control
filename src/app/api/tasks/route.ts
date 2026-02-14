@@ -49,17 +49,41 @@ export async function GET(request: NextRequest) {
 
     const tasks = queryAll<Task & { assigned_agent_name?: string; assigned_agent_emoji?: string; created_by_agent_name?: string }>(sql, params);
 
-    // Transform to include nested agent info
-    const transformedTasks = tasks.map((task) => ({
-      ...task,
-      assigned_agent: task.assigned_agent_id
-        ? {
-            id: task.assigned_agent_id,
-            name: task.assigned_agent_name,
-            avatar_emoji: task.assigned_agent_emoji,
-          }
-        : undefined,
-    }));
+    // Fetch dependency metadata for all tasks in one query
+    const depCounts = queryAll<{ task_id: string; dep_count: number; has_incomplete: number }>(
+      `SELECT td.task_id,
+              COUNT(*) as dep_count,
+              SUM(CASE WHEN t.status != 'done' THEN 1 ELSE 0 END) as has_incomplete
+       FROM task_dependencies td
+       JOIN tasks t ON td.dependency_id = t.id
+       GROUP BY td.task_id`
+    );
+    const blockingCounts = queryAll<{ dependency_id: string; blocking_count: number }>(
+      `SELECT dependency_id, COUNT(*) as blocking_count
+       FROM task_dependencies
+       GROUP BY dependency_id`
+    );
+
+    const depMap = new Map(depCounts.map(d => [d.task_id, d]));
+    const blockMap = new Map(blockingCounts.map(b => [b.dependency_id, b.blocking_count]));
+
+    // Transform to include nested agent info and dependency metadata
+    const transformedTasks = tasks.map((task) => {
+      const dep = depMap.get(task.id);
+      return {
+        ...task,
+        assigned_agent: task.assigned_agent_id
+          ? {
+              id: task.assigned_agent_id,
+              name: task.assigned_agent_name,
+              avatar_emoji: task.assigned_agent_emoji,
+            }
+          : undefined,
+        dependency_count: dep?.dep_count ?? 0,
+        blocking_count: blockMap.get(task.id) ?? 0,
+        is_blocked: (dep?.has_incomplete ?? 0) > 0,
+      };
+    });
 
     return NextResponse.json(transformedTasks);
   } catch (error) {

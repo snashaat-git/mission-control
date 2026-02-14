@@ -1,15 +1,17 @@
 'use client';
 
 import { useState } from 'react';
-import { X, Save, Trash2, Activity, Package, Bot, FolderOpen, Scan, FileText, Sparkles, Copy, Plus } from 'lucide-react';
+import { X, Save, Trash2, Activity, Package, Bot, FolderOpen, Scan, FileText, Sparkles, Copy, Plus, Link, RotateCcw } from 'lucide-react';
 import { useMissionControl } from '@/lib/store';
 import { ActivityLog } from './ActivityLog';
 import { DeliverablesList } from './DeliverablesList';
 import { SessionsList } from './SessionsList';
+import { DependenciesList } from './DependenciesList';
 import { PromptsLibrary } from './PromptsLibrary';
+import { useToast } from '@/hooks/useToast';
 import type { Task, TaskPriority, TaskStatus, Prompt } from '@/lib/types';
 
-type TabType = 'overview' | 'activity' | 'deliverables' | 'sessions';
+type TabType = 'overview' | 'dependencies' | 'activity' | 'deliverables' | 'sessions';
 
 interface TaskModalProps {
   task?: Task;
@@ -18,6 +20,7 @@ interface TaskModalProps {
 
 export function TaskModal({ task, onClose }: TaskModalProps) {
   const { agents, addTask, updateTask, addEvent } = useMissionControl();
+  const { success, error: showError } = useToast();
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [activeTab, setActiveTab] = useState<TabType>('overview');
   const [showPromptsLibrary, setShowPromptsLibrary] = useState(false);
@@ -124,15 +127,15 @@ export function TaskModal({ task, onClose }: TaskModalProps) {
             message: `Task copied: ${data.new_task.title}`,
             created_at: new Date().toISOString(),
           });
-          alert(`Task copied successfully!\n\nNew task: "${data.new_task.title}" is now in Inbox.`);
+          success(`Task copied! "${data.new_task.title}" is now in Inbox.`);
         }
       } else {
         const err = await res.json();
-        alert(err.error || 'Failed to copy task');
+        showError(err.error || 'Failed to copy task');
       }
     } catch (error) {
       console.error('Failed to copy task:', error);
-      alert('Failed to copy task');
+      showError('Failed to copy task');
     }
   };
 
@@ -188,22 +191,23 @@ export function TaskModal({ task, onClose }: TaskModalProps) {
     setShowPromptsLibrary(false);
   };
 
-  const statuses: TaskStatus[] = ['inbox', 'assigned', 'in_progress', 'testing', 'review', 'done'];
+  const statuses: TaskStatus[] = ['inbox', 'assigned', 'in_progress', 'testing', 'review', 'done', 'failed'];
   const priorities: TaskPriority[] = ['low', 'normal', 'high', 'urgent'];
 
   const tabs = [
     { id: 'overview' as TabType, label: 'Overview', icon: null },
+    { id: 'dependencies' as TabType, label: 'Dependencies', icon: <Link className="w-4 h-4" /> },
     { id: 'activity' as TabType, label: 'Activity', icon: <Activity className="w-4 h-4" /> },
     { id: 'deliverables' as TabType, label: 'Deliverables', icon: <Package className="w-4 h-4" /> },
     { id: 'sessions' as TabType, label: 'Sessions', icon: <Bot className="w-4 h-4" /> },
   ];
 
   return (
-    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-      <div className="bg-mc-bg-secondary border border-mc-border rounded-lg w-full max-w-2xl max-h-[90vh] flex flex-col">
+    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-2 sm:p-4" role="dialog" aria-modal="true" aria-labelledby="task-modal-title">
+      <div className="bg-mc-bg-secondary border border-mc-border rounded-lg w-full max-w-2xl max-h-[95vh] sm:max-h-[90vh] flex flex-col">
         {/* Header */}
         <div className="flex items-center justify-between p-4 border-b border-mc-border flex-shrink-0">
-          <h2 className="text-lg font-semibold">
+          <h2 id="task-modal-title" className="text-lg font-semibold">
             {task ? task.title : 'Create New Task'}
           </h2>
           <div className="flex items-center gap-2">
@@ -218,7 +222,8 @@ export function TaskModal({ task, onClose }: TaskModalProps) {
             )}
             <button
               onClick={onClose}
-              className="p-1 hover:bg-mc-bg-tertiary rounded"
+              className="p-1 hover:bg-mc-bg-tertiary rounded focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-mc-accent"
+              aria-label="Close"
             >
               <X className="w-5 h-5" />
             </button>
@@ -250,6 +255,20 @@ export function TaskModal({ task, onClose }: TaskModalProps) {
           {/* Overview Tab */}
           {activeTab === 'overview' && (
             <form onSubmit={handleSubmit} className="space-y-4">
+          {/* Failed Banner */}
+          {task?.status === 'failed' && (
+            <div className="flex items-center gap-2 p-3 bg-red-500/10 border border-red-500/20 rounded text-sm text-red-400">
+              <span className="text-lg">⚠️</span>
+              <div className="flex-1">
+                <span className="font-medium">Task Failed</span>
+                {(task.retry_count ?? 0) > 0 && (
+                  <span className="text-red-400/70 ml-2">
+                    ({task.retry_count}/{task.max_retries ?? 2} retries used)
+                  </span>
+                )}
+              </div>
+            </div>
+          )}
           {/* Title */}
           <div>
             <label className="block text-sm font-medium mb-1">Title</label>
@@ -409,13 +428,13 @@ export function TaskModal({ task, onClose }: TaskModalProps) {
                     try {
                       const res = await fetch(`/api/tasks/${task.id}/deliverables/scan`, { method: 'POST' });
                       if (res.ok) {
-                        alert('Deliverables scanned successfully');
+                        success('Deliverables scanned successfully');
                       } else {
                         const err = await res.json();
-                        alert(err.error || 'Scan failed');
+                        showError(err.error || 'Scan failed');
                       }
                     } catch (e) {
-                      alert('Failed to scan deliverables');
+                      showError('Failed to scan deliverables');
                     }
                   }}
                   className="flex items-center gap-1 px-3 py-1.5 bg-mc-bg-tertiary border border-mc-border rounded text-sm hover:bg-mc-bg hover:border-mc-accent"
@@ -427,6 +446,11 @@ export function TaskModal({ task, onClose }: TaskModalProps) {
             )}
           </div>
             </form>
+          )}
+
+          {/* Dependencies Tab */}
+          {activeTab === 'dependencies' && task && (
+            <DependenciesList taskId={task.id} />
           )}
 
           {/* Activity Tab */}
@@ -468,6 +492,29 @@ export function TaskModal({ task, onClose }: TaskModalProps) {
                     <Copy className="w-4 h-4" />
                     Copy to Inbox
                   </button>
+                  {task.status === 'failed' && (
+                    <button
+                      type="button"
+                      onClick={async () => {
+                        try {
+                          const res = await fetch(`/api/tasks/${task.id}/retry`, { method: 'POST' });
+                          if (res.ok) {
+                            const data = await res.json();
+                            if (data.task) {
+                              updateTask(data.task);
+                            }
+                            onClose();
+                          }
+                        } catch (err) {
+                          console.error('Failed to retry task:', err);
+                        }
+                      }}
+                      className="flex items-center gap-2 px-3 py-2 bg-mc-accent text-white hover:bg-mc-accent/80 rounded text-sm"
+                    >
+                      <RotateCcw className="w-4 h-4" />
+                      Retry{(task.retry_count ?? 0) > 0 ? ` (${task.retry_count})` : ''}
+                    </button>
+                  )}
                 </>
               )}
             </div>

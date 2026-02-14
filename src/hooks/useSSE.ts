@@ -8,6 +8,7 @@
 import { useEffect, useRef } from 'react';
 import { useMissionControl } from '@/lib/store';
 import { debug } from '@/lib/debug';
+import { useNotifications } from './useNotifications';
 import type { SSEEvent, Task } from '@/lib/types';
 
 export function useSSE() {
@@ -20,6 +21,7 @@ export function useSSE() {
     selectedTask,
     setSelectedTask,
   } = useMissionControl();
+  const { notify } = useNotifications();
 
   useEffect(() => {
     let isConnecting = false;
@@ -75,6 +77,13 @@ export function useSSE() {
                 debug.sse('Also updating selectedTask for modal');
                 setSelectedTask(incomingTask);
               }
+
+              // Browser notifications for key status changes
+              if (incomingTask.status === 'done') {
+                notify('Task Completed', { body: incomingTask.title, tag: `task-done-${incomingTask.id}` });
+              } else if (incomingTask.status === 'review') {
+                notify('Task Ready for Review', { body: incomingTask.title, tag: `task-review-${incomingTask.id}` });
+              }
               break;
 
             case 'activity_logged':
@@ -92,8 +101,37 @@ export function useSSE() {
               // Will trigger re-fetch of sub-agent count
               break;
 
+            case 'task_failed':
+              const failedTask = sseEvent.payload as Task;
+              debug.sse('Task failed', { id: failedTask.id, title: failedTask.title });
+              updateTask(failedTask);
+              if (selectedTask?.id === failedTask.id) {
+                setSelectedTask(failedTask);
+              }
+              notify('Task Failed', { body: failedTask.title, tag: `task-failed-${failedTask.id}` });
+              break;
+
             case 'agent_completed':
               debug.sse('Agent completed', sseEvent.payload);
+              {
+                const agentPayload = sseEvent.payload as { taskId?: string; sessionId?: string; agentName?: string };
+                if (agentPayload.agentName) {
+                  notify('Agent Finished', { body: agentPayload.agentName, tag: `agent-done-${agentPayload.sessionId}` });
+                }
+              }
+              break;
+
+            case 'dependency_changed':
+              debug.sse('Dependency changed', sseEvent.payload);
+              // Re-fetch tasks to get updated dependency counts and blocked status
+              fetch('/api/tasks')
+                .then(res => res.ok ? res.json() : [])
+                .then(tasks => {
+                  if (Array.isArray(tasks)) {
+                    tasks.forEach((t: Task) => updateTask(t));
+                  }
+                })
+                .catch(() => {});
               break;
 
             default:
@@ -135,5 +173,5 @@ export function useSSE() {
         clearTimeout(reconnectTimeoutRef.current);
       }
     };
-  }, [addTask, updateTask, setIsOnline, selectedTask, setSelectedTask]);
+  }, [addTask, updateTask, setIsOnline, selectedTask, setSelectedTask, notify]);
 }

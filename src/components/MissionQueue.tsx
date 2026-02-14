@@ -1,13 +1,14 @@
 'use client';
 
-import { useState, useCallback } from 'react';
-import { Plus, ChevronRight, GripVertical, CheckCircle, ArrowRight, RotateCcw, Sparkles, Brain, Zap, BarChart3, X } from 'lucide-react';
+import { useState, useCallback, useMemo, memo } from 'react';
+import { Plus, ChevronRight, GripVertical, CheckCircle, ArrowRight, RotateCcw, Sparkles, Brain, Zap, BarChart3, X, Lock } from 'lucide-react';
 import { useMissionControl } from '@/lib/store';
 import type { Task, TaskStatus } from '@/lib/types';
 import { TaskModal } from './TaskModal';
 import { TemplatePicker } from './TemplatePicker';
 import { AnalyticsPanel } from './AnalyticsPanel';
 import { TASK_TEMPLATES, formatTemplateDefaults, calculateDueDate, type TaskTemplate } from '@/lib/templates';
+import { useToast } from '@/hooks/useToast';
 import { formatDistanceToNow } from 'date-fns';
 
 // Stuck task thresholds (in minutes)
@@ -18,6 +19,14 @@ const STUCK_THRESHOLDS: Record<TaskStatus, number> = {
   'testing': 1440,    // 24 hours
   'review': 480,      // 8 hours
   'done': Infinity,   // Never stuck
+  'failed': Infinity, // Never stuck (already failed)
+};
+
+const PRIORITY_COLORS: Record<string, string> = {
+  low: 'bg-mc-text-secondary/20',
+  normal: 'bg-mc-accent/20',
+  high: 'bg-mc-accent-yellow/20',
+  urgent: 'bg-mc-accent-red/20',
 };
 
 interface StuckInfo {
@@ -31,12 +40,18 @@ function getStuckInfo(task: Task): StuckInfo {
   const now = Date.now();
   const minutesInStatus = Math.floor((now - updatedAt) / 60000);
   const threshold = STUCK_THRESHOLDS[task.status] ?? Infinity;
-  
+
   return {
     isStuck: minutesInStatus > threshold,
     minutesInStatus,
     threshold,
   };
+}
+
+function formatStuckTime(minutes: number): string {
+  if (minutes < 60) return `${minutes}m`;
+  if (minutes < 1440) return `${Math.floor(minutes / 60)}h`;
+  return `${Math.floor(minutes / 1440)}d`;
 }
 
 const COLUMNS: { id: TaskStatus; label: string; color: string }[] = [
@@ -46,6 +61,7 @@ const COLUMNS: { id: TaskStatus; label: string; color: string }[] = [
   { id: 'testing', label: 'TESTING', color: 'border-t-mc-accent-cyan' },
   { id: 'review', label: 'REVIEW', color: 'border-t-mc-accent-purple' },
   { id: 'done', label: 'DONE', color: 'border-t-mc-accent-green' },
+  { id: 'failed', label: 'FAILED', color: 'border-t-red-500' },
 ];
 
 // Undo state type
@@ -59,6 +75,7 @@ interface UndoState {
 
 export function MissionQueue() {
   const { tasks, updateTaskStatus, addEvent, updateTask, addTask } = useMissionControl();
+  const { success, error: showError, warning } = useToast();
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [showTemplatePicker, setShowTemplatePicker] = useState(false);
   const [showAnalytics, setShowAnalytics] = useState(false);
@@ -68,8 +85,18 @@ export function MissionQueue() {
   const [undoState, setUndoState] = useState<UndoState | null>(null);
   const [countdown, setCountdown] = useState(5);
 
-  const getTasksByStatus = (status: TaskStatus) =>
-    tasks.filter((task) => task.status === status);
+  // Memoize tasks grouped by status to avoid re-filtering on every render
+  const tasksByStatus = useMemo(() => {
+    const grouped: Record<TaskStatus, Task[]> = {
+      inbox: [], assigned: [], in_progress: [], testing: [], review: [], done: [], failed: [],
+    };
+    for (const task of tasks) {
+      grouped[task.status]?.push(task);
+    }
+    return grouped;
+  }, [tasks]);
+
+  const getTasksByStatus = (status: TaskStatus) => tasksByStatus[status];
 
   // Clear undo state
   const clearUndo = useCallback(() => {
@@ -134,15 +161,20 @@ export function MissionQueue() {
     setUndoState({ taskId, previousStatus, newStatus, taskTitle, timeoutId });
   }, [undoState]);
 
-  const handleDragStart = (e: React.DragEvent, task: Task) => {
+  const handleDragStart = useCallback((e: React.DragEvent, task: Task) => {
     setDraggedTask(task);
     e.dataTransfer.effectAllowed = 'move';
-  };
+    e.dataTransfer.setData('text/plain', task.id);
+  }, []);
 
-  const handleDragOver = (e: React.DragEvent) => {
+  const handleDragEnd = useCallback(() => {
+    setDraggedTask(null);
+  }, []);
+
+  const handleDragOver = useCallback((e: React.DragEvent) => {
     e.preventDefault();
     e.dataTransfer.dropEffect = 'move';
-  };
+  }, []);
 
   const handleDrop = async (e: React.DragEvent, targetStatus: TaskStatus) => {
     e.preventDefault();
@@ -153,6 +185,14 @@ export function MissionQueue() {
 
     const previousStatus = draggedTask.status;
     const taskTitle = draggedTask.title;
+
+    // Warn if task is blocked by dependencies
+    if (draggedTask.is_blocked && ['assigned', 'in_progress', 'testing', 'review', 'done'].includes(targetStatus)) {
+      if (!confirm(`"${taskTitle}" has incomplete dependencies and is blocked. The server will reject this move. Continue anyway?`)) {
+        setDraggedTask(null);
+        return;
+      }
+    }
 
     updateTaskStatus(draggedTask.id, targetStatus);
 
@@ -177,7 +217,7 @@ export function MissionQueue() {
         }
       } else {
         const errorData = await res.json().catch(() => ({ error: 'Unknown error' }));
-        alert(`Cannot move task to ${targetStatus}: ${errorData.detail || errorData.error || 'Workflow rule violation'}`);
+        showError(`Cannot move task: ${errorData.detail || errorData.error || 'Workflow rule violation'}`);
         updateTaskStatus(draggedTask.id, previousStatus);
       }
     } catch (error) {
@@ -222,20 +262,13 @@ export function MissionQueue() {
         setupUndo(task.id, previousStatus, newStatus, task.title);
       } else {
         const errorData = await res.json().catch(() => ({ error: 'Unknown error' }));
-        alert(`Cannot verify task: ${errorData.detail || errorData.error}`);
+        showError(`Cannot verify task: ${errorData.detail || errorData.error}`);
         updateTaskStatus(task.id, previousStatus);
       }
     } catch (error) {
       console.error('Failed to verify task:', error);
       updateTaskStatus(task.id, previousStatus);
     }
-  };
-
-  // Format stuck time in human readable way
-  const formatStuckTime = (minutes: number): string => {
-    if (minutes < 60) return `${minutes}m`;
-    if (minutes < 1440) return `${Math.floor(minutes / 60)}h`;
-    return `${Math.floor(minutes / 1440)}d`;
   };
 
   return (
@@ -279,7 +312,7 @@ export function MissionQueue() {
                 }
                 
                 if (assigned > 0) {
-                  alert(`Auto-assigned ${assigned} task(s) to optimal agents!`);
+                  success(`Auto-assigned ${assigned} task(s) to optimal agents!`);
                 }
                 setAutoAssigning(false);
               }}
@@ -316,17 +349,25 @@ export function MissionQueue() {
           const columnTasks = getTasksByStatus(column.id);
           const isTesting = column.id === 'testing';
           
+          const isDropTarget = draggedTask && draggedTask.status !== column.id;
+
           return (
             <div
               key={column.id}
-              className={`flex-1 min-w-[180px] flex flex-col bg-mc-bg rounded border border-mc-border border-t-2 ${column.color}`}
+              className={`flex-1 min-w-[140px] sm:min-w-[180px] flex flex-col bg-mc-bg rounded border border-t-2 transition-colors ${column.color} ${
+                isDropTarget
+                  ? 'border-mc-accent/40 shadow-[0_0_8px_rgba(88,166,255,0.15)]'
+                  : 'border-mc-border'
+              }`}
               style={{ maxWidth: 'calc(100% / 6)' }}
               onDragOver={handleDragOver}
               onDrop={(e) => handleDrop(e, column.id)}
             >
               {/* Column Header */}
               <div className="p-2 border-b border-mc-border flex items-center justify-between">
-                <span className="text-xs font-medium uppercase text-mc-text-secondary">
+                <span className={`text-xs font-medium uppercase transition-colors ${
+                  isDropTarget ? 'text-mc-accent' : 'text-mc-text-secondary'
+                }`}>
                   {column.label}
                 </span>
                 <span className="text-xs bg-mc-bg-tertiary px-2 py-0.5 rounded text-mc-text-secondary">
@@ -358,16 +399,37 @@ export function MissionQueue() {
               )}
 
               {/* Tasks */}
-              <div className="flex-1 overflow-y-auto p-2 space-y-2">
+              <div className={`flex-1 overflow-y-auto p-2 space-y-2 transition-colors ${
+                draggedTask && draggedTask.status !== column.id
+                  ? 'bg-mc-accent/5 border-2 border-dashed border-mc-accent/20 rounded'
+                  : ''
+              }`}>
+                {columnTasks.length === 0 && !draggedTask && (
+                  <div className="flex flex-col items-center justify-center h-full text-mc-text-secondary py-8">
+                    <span className="text-2xl mb-2 opacity-30">
+                      {column.id === 'inbox' ? '📥' :
+                       column.id === 'assigned' ? '👤' :
+                       column.id === 'in_progress' ? '⚡' :
+                       column.id === 'testing' ? '🧪' :
+                       column.id === 'review' ? '👀' :
+                       column.id === 'done' ? '✅' : '⚠️'}
+                    </span>
+                    <p className="text-xs">No tasks</p>
+                  </div>
+                )}
+                {draggedTask && draggedTask.status !== column.id && columnTasks.length === 0 && (
+                  <div className="flex items-center justify-center h-full text-mc-accent/50 py-8">
+                    <p className="text-xs font-medium">Drop here</p>
+                  </div>
+                )}
                 {columnTasks.map((task) => (
                   <TaskCard
                     key={task.id}
                     task={task}
                     onDragStart={handleDragStart}
+                    onDragEnd={handleDragEnd}
                     onClick={() => setEditingTask(task)}
                     isDragging={draggedTask?.id === task.id}
-                    getStuckInfo={getStuckInfo}
-                    formatStuckTime={formatStuckTime}
                   />
                 ))}
               </div>
@@ -466,11 +528,11 @@ export function MissionQueue() {
                 setShowTemplatePicker(false);
               } else {
                 const err = await res.json();
-                alert(err.error || 'Failed to create task');
+                showError(err.error || 'Failed to create task');
               }
             } catch (error) {
               console.error('Failed to create task:', error);
-              alert('Failed to create task');
+              showError('Failed to create task');
             }
           }}
           onClose={() => setShowTemplatePicker(false)}
@@ -495,19 +557,13 @@ export function MissionQueue() {
 interface TaskCardProps {
   task: Task;
   onDragStart: (e: React.DragEvent, task: Task) => void;
+  onDragEnd: () => void;
   onClick: () => void;
   isDragging: boolean;
-  getStuckInfo: (task: Task) => StuckInfo;
-  formatStuckTime: (minutes: number) => string;
 }
 
-function TaskCard({ task, onDragStart, onClick, isDragging, getStuckInfo, formatStuckTime }: TaskCardProps) {
-  const priorityColors = {
-    low: 'bg-mc-text-secondary/20',
-    normal: 'bg-mc-accent/20',
-    high: 'bg-mc-accent-yellow/20',
-    urgent: 'bg-mc-accent-red/20',
-  };
+const TaskCard = memo(function TaskCard({ task, onDragStart, onDragEnd, onClick, isDragging }: TaskCardProps) {
+  const { updateTask } = useMissionControl();
 
   const stuckInfo = getStuckInfo(task);
   const stuckClass = stuckInfo.isStuck ? 'border-l-2 border-l-mc-accent-red' : '';
@@ -516,6 +572,7 @@ function TaskCard({ task, onDragStart, onClick, isDragging, getStuckInfo, format
     <div
       draggable
       onDragStart={(e) => onDragStart(e, task)}
+      onDragEnd={onDragEnd}
       onClick={onClick}
       className={`bg-mc-bg-secondary border border-mc-border rounded p-3 cursor-pointer hover:border-mc-accent/50 transition-all ${
         isDragging ? 'opacity-50 scale-95' : ''
@@ -527,10 +584,45 @@ function TaskCard({ task, onDragStart, onClick, isDragging, getStuckInfo, format
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-1">
             <h4 className="text-sm font-medium truncate">{task.title}</h4>
+            {task.is_blocked && (
+              <span className="flex items-center gap-0.5 px-1.5 py-0.5 bg-mc-accent-red/20 text-mc-accent-red text-xs rounded" title="Blocked by incomplete dependencies">
+                <Lock className="w-3 h-3" />
+              </span>
+            )}
+            {!task.is_blocked && (task.dependency_count ?? 0) > 0 && (
+              <span className="flex items-center gap-0.5 px-1.5 py-0.5 bg-mc-accent-green/20 text-mc-accent-green text-xs rounded" title="All dependencies completed">
+                {task.dependency_count}
+              </span>
+            )}
             {stuckInfo.isStuck && (
               <span className="text-mc-accent-red" title={`Stuck for ${formatStuckTime(stuckInfo.minutesInStatus)}`}>🔴</span>
             )}
+            {(task.retry_count ?? 0) > 0 && (
+              <span className="text-xs text-mc-text-secondary" title={`Retried ${task.retry_count} time(s)`}>
+                ↻{task.retry_count}
+              </span>
+            )}
           </div>
+          {task.status === 'failed' && (
+            <button
+              onClick={async (e) => {
+                e.stopPropagation();
+                try {
+                  const res = await fetch(`/api/tasks/${task.id}/retry`, { method: 'POST' });
+                  if (res.ok) {
+                    const data = await res.json();
+                    if (data.task) updateTask(data.task);
+                  }
+                } catch (err) {
+                  console.error('Failed to retry task:', err);
+                }
+              }}
+              className="mt-1.5 w-full flex items-center justify-center gap-1.5 px-2 py-1 bg-mc-accent/10 text-mc-accent text-xs rounded hover:bg-mc-accent/20 transition-colors"
+            >
+              <RotateCcw className="w-3 h-3" />
+              Retry Task
+            </button>
+          )}
           {task.assigned_agent && (
             <div className="flex items-center gap-1 mt-2">
               <span className="text-sm">{(task.assigned_agent as unknown as { avatar_emoji: string }).avatar_emoji}</span>
@@ -541,7 +633,7 @@ function TaskCard({ task, onDragStart, onClick, isDragging, getStuckInfo, format
           )}
           <div className="flex items-center justify-between mt-2">
             <span
-              className={`text-xs px-2 py-0.5 rounded ${priorityColors[task.priority]}`}
+              className={`text-xs px-2 py-0.5 rounded ${PRIORITY_COLORS[task.priority]}`}
             >
               {task.priority}
             </span>
@@ -553,4 +645,4 @@ function TaskCard({ task, onDragStart, onClick, isDragging, getStuckInfo, format
       </div>
     </div>
   );
-}
+});

@@ -1,12 +1,13 @@
 /**
  * SessionsList Component
- * Displays OpenClaw sub-agent sessions for a task
+ * Displays OpenClaw sub-agent sessions for a task with live view support
  */
 
 'use client';
 
 import { useEffect, useState } from 'react';
-import { Bot, CheckCircle, Circle, XCircle, Trash2, Check } from 'lucide-react';
+import { Bot, CheckCircle, Circle, XCircle, Trash2, Check, MessageSquare, ChevronRight } from 'lucide-react';
+import { SessionView } from './SessionView';
 
 interface SessionWithAgent {
   id: string;
@@ -30,6 +31,7 @@ interface SessionsListProps {
 export function SessionsList({ taskId }: SessionsListProps) {
   const [sessions, setSessions] = useState<SessionWithAgent[]>([]);
   const [loading, setLoading] = useState(true);
+  const [viewingSessionId, setViewingSessionId] = useState<string | null>(null);
 
   useEffect(() => {
     loadSessions();
@@ -90,7 +92,8 @@ export function SessionsList({ taskId }: SessionsListProps) {
     });
   };
 
-  const handleMarkComplete = async (sessionId: string) => {
+  const handleMarkComplete = async (e: React.MouseEvent, sessionId: string) => {
+    e.stopPropagation();
     try {
       const res = await fetch(`/api/openclaw/sessions/${sessionId}`, {
         method: 'PATCH',
@@ -108,7 +111,8 @@ export function SessionsList({ taskId }: SessionsListProps) {
     }
   };
 
-  const handleDelete = async (sessionId: string) => {
+  const handleDelete = async (e: React.MouseEvent, sessionId: string) => {
+    e.stopPropagation();
     if (!confirm('Delete this sub-agent session?')) return;
     try {
       const res = await fetch(`/api/openclaw/sessions/${sessionId}`, {
@@ -121,6 +125,22 @@ export function SessionsList({ taskId }: SessionsListProps) {
       console.error('Failed to delete session:', error);
     }
   };
+
+  // Show live session view when a session is selected
+  if (viewingSessionId) {
+    const session = sessions.find(s => s.openclaw_session_id === viewingSessionId);
+    return (
+      <div className="h-[400px] -mx-4 -mb-4">
+        <SessionView
+          sessionId={viewingSessionId}
+          sessionStatus={session?.status || 'active'}
+          agentName={session?.agent_name}
+          agentEmoji={session?.agent_avatar_emoji}
+          onClose={() => setViewingSessionId(null)}
+        />
+      </div>
+    );
+  }
 
   if (loading) {
     return (
@@ -144,7 +164,8 @@ export function SessionsList({ taskId }: SessionsListProps) {
       {sessions.map((session) => (
         <div
           key={session.id}
-          className="flex gap-3 p-3 bg-mc-bg rounded-lg border border-mc-border"
+          onClick={() => setViewingSessionId(session.openclaw_session_id)}
+          className="flex gap-3 p-3 bg-mc-bg rounded-lg border border-mc-border cursor-pointer hover:border-mc-accent/50 transition-colors group"
         >
           {/* Agent Avatar */}
           <div className="flex-shrink-0">
@@ -190,24 +211,31 @@ export function SessionsList({ taskId }: SessionsListProps) {
             )}
           </div>
 
-          {/* Action Buttons */}
-          <div className="flex flex-col gap-1">
-            {session.status === 'active' && (
+          {/* Action Buttons + View Chat */}
+          <div className="flex flex-col items-end gap-1">
+            <div className="flex items-center gap-1">
+              {session.status === 'active' && (
+                <button
+                  onClick={(e) => handleMarkComplete(e, session.openclaw_session_id)}
+                  className="p-1.5 hover:bg-mc-bg-tertiary rounded text-green-500"
+                  title="Mark as complete"
+                >
+                  <Check className="w-4 h-4" />
+                </button>
+              )}
               <button
-                onClick={() => handleMarkComplete(session.openclaw_session_id)}
-                className="p-1.5 hover:bg-mc-bg-tertiary rounded text-green-500"
-                title="Mark as complete"
+                onClick={(e) => handleDelete(e, session.openclaw_session_id)}
+                className="p-1.5 hover:bg-mc-bg-tertiary rounded text-red-500"
+                title="Delete session"
               >
-                <Check className="w-4 h-4" />
+                <Trash2 className="w-4 h-4" />
               </button>
-            )}
-            <button
-              onClick={() => handleDelete(session.openclaw_session_id)}
-              className="p-1.5 hover:bg-mc-bg-tertiary rounded text-red-500"
-              title="Delete session"
-            >
-              <Trash2 className="w-4 h-4" />
-            </button>
+            </div>
+            <div className="flex items-center gap-1 text-xs text-mc-text-secondary group-hover:text-mc-accent transition-colors mt-auto">
+              <MessageSquare className="w-3.5 h-3.5" />
+              <span>View Chat</span>
+              <ChevronRight className="w-3.5 h-3.5" />
+            </div>
           </div>
         </div>
       ))}

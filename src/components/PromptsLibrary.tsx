@@ -67,20 +67,22 @@ export function PromptsLibrary({ isOpen, onClose, onSelectPrompt, selectMode }: 
     return matchesSearch && matchesCategory;
   });
 
-  const categories = ['all', ...Array.from(new Set(prompts.map(p => p.category)))];
+  const DEFAULT_CATEGORIES = ['general', 'coding', 'writing', 'research', 'design', 'marketing', 'data', 'devops', 'testing'];
+  const promptCategories = Array.from(new Set(prompts.map(p => p.category)));
+  const categories = ['all', ...Array.from(new Set([...DEFAULT_CATEGORIES, ...promptCategories]))];
 
   if (!isOpen) return null;
 
   return (
-    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4" role="dialog" aria-modal="true" aria-labelledby="prompts-library-title">
       <div className="bg-mc-bg-secondary border border-mc-border rounded-lg w-full max-w-4xl max-h-[90vh] flex flex-col">
         {/* Header */}
         <div className="flex items-center justify-between p-4 border-b border-mc-border">
           <div className="flex items-center gap-2">
             <Library className="w-5 h-5 text-mc-accent" />
-            <h2 className="text-lg font-semibold">Prompts Library</h2>
+            <h2 id="prompts-library-title" className="text-lg font-semibold">Prompts Library</h2>
           </div>
-          <button onClick={onClose} className="p-1 hover:bg-mc-bg-tertiary rounded">
+          <button onClick={onClose} className="p-1 hover:bg-mc-bg-tertiary rounded focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-mc-accent" aria-label="Close">
             <X className="w-5 h-5" />
           </button>
         </div>

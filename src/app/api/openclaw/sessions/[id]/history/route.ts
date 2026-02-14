@@ -36,8 +36,13 @@ export async function GET(request: Request, { params }: RouteParams) {
     const targetSessionKey = mcSession?.agent_session_key || mcSession?.openclaw_session_id || id;
 
     // Use chat.history instead of sessions.history (which doesn't exist)
-    const history = await client.call('chat.history', { sessionKey: targetSessionKey, limit: 50 });
-    return NextResponse.json({ history });
+    const result = await client.call('chat.history', { sessionKey: targetSessionKey, limit: 50 });
+
+    // The gateway returns { sessionKey, messages, thinkingLevel }
+    // Extract just the messages array for the frontend
+    const resultAny = result as Record<string, unknown>;
+    const messages = Array.isArray(result) ? result : (Array.isArray(resultAny?.messages) ? resultAny.messages : []);
+    return NextResponse.json({ history: messages });
   } catch (error) {
     console.error('Failed to get OpenClaw session history:', error);
     return NextResponse.json(

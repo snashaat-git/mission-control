@@ -124,6 +124,174 @@ export function getTemplateById(id: string): TaskTemplate | undefined {
   return TASK_TEMPLATES.find((t) => t.id === id);
 }
 
+// --- Workflow Templates (multi-step task chains with dependencies) ---
+
+export interface WorkflowStep {
+  stepLabel: string;
+  defaults: TaskTemplate['defaults'];
+  dependsOnSteps: number[]; // indices of prior steps this step depends on
+}
+
+export interface WorkflowTemplate {
+  id: string;
+  name: string;
+  description: string;
+  icon: string;
+  steps: WorkflowStep[];
+}
+
+export const WORKFLOW_TEMPLATES: WorkflowTemplate[] = [
+  {
+    id: 'research-write-review',
+    name: 'Research → Write → Review',
+    description: 'Research a topic, write content, then review and polish',
+    icon: '📝',
+    steps: [
+      {
+        stepLabel: 'Research',
+        defaults: {
+          title: 'Research: [Topic]',
+          description: 'Research [Topic] and compile key findings, sources, and data points.\n\n**Deliverables:** Markdown notes with sources.',
+          priority: 'normal',
+          status: 'inbox',
+          suggested_due_hours: 8,
+        },
+        dependsOnSteps: [],
+      },
+      {
+        stepLabel: 'Write',
+        defaults: {
+          title: 'Write: [Topic]',
+          description: 'Using the research findings, write a comprehensive document on [Topic].\n\n**Deliverables:** Draft document in Markdown.',
+          priority: 'normal',
+          status: 'inbox',
+          suggested_due_hours: 12,
+        },
+        dependsOnSteps: [0],
+      },
+      {
+        stepLabel: 'Review',
+        defaults: {
+          title: 'Review: [Topic]',
+          description: 'Review and polish the written document on [Topic]. Check for accuracy, clarity, and completeness.\n\n**Deliverables:** Final reviewed document.',
+          priority: 'normal',
+          status: 'inbox',
+          suggested_due_hours: 4,
+        },
+        dependsOnSteps: [1],
+      },
+    ],
+  },
+  {
+    id: 'design-develop-test',
+    name: 'Design → Develop → Test',
+    description: 'Design a feature, build it, then test it',
+    icon: '🛠️',
+    steps: [
+      {
+        stepLabel: 'Design',
+        defaults: {
+          title: 'Design: [Feature]',
+          description: 'Create a technical design for [Feature]. Define requirements, architecture, and UI mockups if applicable.\n\n**Deliverables:** Design document / wireframes.',
+          priority: 'high',
+          status: 'inbox',
+          suggested_due_hours: 8,
+        },
+        dependsOnSteps: [],
+      },
+      {
+        stepLabel: 'Develop',
+        defaults: {
+          title: 'Develop: [Feature]',
+          description: 'Implement [Feature] based on the design document. Write clean, well-structured code.\n\n**Deliverables:** Working implementation with code.',
+          priority: 'high',
+          status: 'inbox',
+          suggested_due_hours: 24,
+        },
+        dependsOnSteps: [0],
+      },
+      {
+        stepLabel: 'Test',
+        defaults: {
+          title: 'Test: [Feature]',
+          description: 'Test [Feature] thoroughly. Write tests, check edge cases, and verify the implementation matches the design.\n\n**Deliverables:** Test results and bug report.',
+          priority: 'high',
+          status: 'inbox',
+          suggested_due_hours: 8,
+        },
+        dependsOnSteps: [1],
+      },
+    ],
+  },
+  {
+    id: 'full-project',
+    name: 'Full Project Pipeline',
+    description: 'Research + Design (parallel) → Develop → Test → Documentation',
+    icon: '🚀',
+    steps: [
+      {
+        stepLabel: 'Research',
+        defaults: {
+          title: 'Research: [Project]',
+          description: 'Research requirements, existing solutions, and best practices for [Project].\n\n**Deliverables:** Research findings document.',
+          priority: 'high',
+          status: 'inbox',
+          suggested_due_hours: 8,
+        },
+        dependsOnSteps: [],
+      },
+      {
+        stepLabel: 'Design',
+        defaults: {
+          title: 'Design: [Project]',
+          description: 'Create technical design and architecture for [Project].\n\n**Deliverables:** Design document with architecture diagrams.',
+          priority: 'high',
+          status: 'inbox',
+          suggested_due_hours: 8,
+        },
+        dependsOnSteps: [],
+      },
+      {
+        stepLabel: 'Develop',
+        defaults: {
+          title: 'Develop: [Project]',
+          description: 'Build [Project] based on research and design outputs.\n\n**Deliverables:** Working implementation.',
+          priority: 'high',
+          status: 'inbox',
+          suggested_due_hours: 32,
+        },
+        dependsOnSteps: [0, 1],
+      },
+      {
+        stepLabel: 'Test',
+        defaults: {
+          title: 'Test: [Project]',
+          description: 'Test [Project] end-to-end. Unit tests, integration tests, and manual QA.\n\n**Deliverables:** Test report.',
+          priority: 'high',
+          status: 'inbox',
+          suggested_due_hours: 12,
+        },
+        dependsOnSteps: [2],
+      },
+      {
+        stepLabel: 'Documentation',
+        defaults: {
+          title: 'Documentation: [Project]',
+          description: 'Write comprehensive documentation for [Project]. Include setup, usage, API reference, and troubleshooting.\n\n**Deliverables:** Complete documentation.',
+          priority: 'normal',
+          status: 'inbox',
+          suggested_due_hours: 8,
+        },
+        dependsOnSteps: [3],
+      },
+    ],
+  },
+];
+
+export function getWorkflowById(id: string): WorkflowTemplate | undefined {
+  return WORKFLOW_TEMPLATES.find((w) => w.id === id);
+}
+
 export function formatTemplateDefaults(
   template: TaskTemplate,
   replacements: Record<string, string> = {}

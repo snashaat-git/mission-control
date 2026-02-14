@@ -4,6 +4,60 @@ All notable changes to Mission Control will be documented in this file.
 
 ## [Unreleased]
 
+### Added - Task Dependencies (2026-02-13)
+
+Task dependency management enabling multi-step workflow orchestration. Tasks can declare prerequisites that must complete before they can advance.
+
+**Data Layer**
+- New `task_dependencies` junction table (many-to-many) with cascade deletes and self-reference prevention
+- Auto-migration for existing databases
+- `Task` objects now include `dependency_count`, `blocking_count`, and `is_blocked` fields
+
+**API Endpoints**
+- `GET /api/tasks/[id]/dependencies` — Lists dependencies in both directions: "depends on" and "blocking"
+- `POST /api/tasks/[id]/dependencies` — Adds a dependency with cycle detection (DFS traversal prevents circular chains)
+- `DELETE /api/tasks/[id]/dependencies/[depId]` — Removes a dependency
+- `GET /api/tasks` — All tasks now include dependency metadata (counts, blocked status) in a single query
+- `PATCH /api/tasks/[id]` — Blocks status advancement (409) when incomplete dependencies exist; cascades unblock notifications when a task reaches `done`
+- `DELETE /api/tasks/[id]` — Cleans up dependency rows in both directions
+
+**UI Components**
+- **DependenciesList** — "Depends On" section (editable, searchable task picker, add/remove) and "Blocking" section (read-only). Status badges per dependency, summary banner showing blocked/clear state.
+- **TaskModal** — New "Dependencies" tab between Overview and Activity
+- **Kanban Board** — Red lock badge on blocked task cards, green dependency count when all deps satisfied. Drag-drop warning for blocked tasks.
+
+**Real-time**
+- SSE `dependency_changed` event triggers task list refresh on all connected clients
+- Task completion watcher broadcasts unblock notifications when a task finishes and its dependents become free
+
+---
+
+### Added - OpenClaw Gateway Settings (2026-02-12)
+
+Configurable gateway connection for portability when moving the app between machines.
+
+- `GET/PUT /api/settings/gateway` — Reads/writes gateway URL and token to `.env.local`
+- Settings page section with gateway URL, token (show/hide), connection status badge, auto-detection indicators
+- "Save & Reconnect" and "Test Connection" buttons
+- Device auth with Ed25519 signature for full operator scope access
+
+---
+
+### Added - Prompt Library Enhancements (2026-02-12)
+
+- Default categories (`general`, `coding`, `writing`, `research`, `design`, `marketing`, `data`, `devops`, `testing`) always visible even when no prompts exist
+- Category combo input: dropdown of existing + default categories with free-text "Create new" option
+- Categories from existing prompts merged with defaults
+
+---
+
+### Fixed - Ubuntu Migration (2026-02-12)
+
+- ESLint version bumped to `^9.0.0` for `eslint-config-next@16` compatibility
+- Database auto-seeds on first run (no manual migration needed)
+
+---
+
 ### Added - Cross-Machine Orchestration & Bug Fixes (2026-01-31)
 
 **🌐 Cross-Machine File Delivery**

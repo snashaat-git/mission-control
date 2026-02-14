@@ -47,6 +47,22 @@ export function PromptEditor({ prompt, agents, onClose, onSave }: PromptEditorPr
   const [showEnhanced, setShowEnhanced] = useState(false);
   const [activeTab, setActiveTab] = useState<'edit' | 'analyze' | 'enhance'>('edit');
   const [templates, setTemplates] = useState<any>(null);
+  const [showCategoryDropdown, setShowCategoryDropdown] = useState(false);
+  const [allCategories, setAllCategories] = useState<string[]>([]);
+
+  // Load existing categories on mount
+  useEffect(() => {
+    fetch('/api/prompts')
+      .then(res => res.json())
+      .then((prompts: Prompt[]) => {
+        const existing = Array.from(new Set(prompts.map(p => p.category)));
+        const defaults = ['general', 'coding', 'writing', 'research', 'design', 'marketing', 'data', 'devops', 'testing'];
+        setAllCategories(Array.from(new Set([...defaults, ...existing])));
+      })
+      .catch(() => {
+        setAllCategories(['general', 'coding', 'writing', 'research', 'design', 'marketing', 'data', 'devops', 'testing']);
+      });
+  }, []);
 
   // Analyze prompt on content change (debounced)
   useEffect(() => {
@@ -208,15 +224,52 @@ export function PromptEditor({ prompt, agents, onClose, onSave }: PromptEditorPr
                     placeholder="e.g., Landing Page Generator"
                   />
                 </div>
-                <div>
+                <div className="relative">
                   <label className="block text-sm font-medium mb-1">Category</label>
                   <input
                     type="text"
                     value={form.category}
-                    onChange={(e) => setForm({ ...form, category: e.target.value })}
+                    onChange={(e) => {
+                      setForm({ ...form, category: e.target.value });
+                      setShowCategoryDropdown(true);
+                    }}
+                    onFocus={() => setShowCategoryDropdown(true)}
+                    onBlur={() => setTimeout(() => setShowCategoryDropdown(false), 150)}
                     className="w-full bg-mc-bg border border-mc-border rounded px-3 py-2 text-sm focus:outline-none focus:border-mc-accent"
-                    placeholder="e.g., coding, writing, research"
+                    placeholder="Select or type a new category"
                   />
+                  {showCategoryDropdown && (
+                    <div className="absolute z-10 top-full left-0 right-0 mt-1 bg-mc-bg border border-mc-border rounded shadow-lg max-h-48 overflow-y-auto">
+                      {allCategories
+                        .filter(c => c.toLowerCase().includes(form.category.toLowerCase()))
+                        .map(cat => (
+                          <button
+                            key={cat}
+                            type="button"
+                            onMouseDown={(e) => e.preventDefault()}
+                            onClick={() => {
+                              setForm({ ...form, category: cat });
+                              setShowCategoryDropdown(false);
+                            }}
+                            className={`w-full text-left px-3 py-2 text-sm hover:bg-mc-bg-tertiary capitalize ${
+                              form.category === cat ? 'text-mc-accent bg-mc-accent/10' : 'text-mc-text'
+                            }`}
+                          >
+                            {cat}
+                          </button>
+                        ))}
+                      {form.category && !allCategories.includes(form.category.toLowerCase()) && (
+                        <button
+                          type="button"
+                          onMouseDown={(e) => e.preventDefault()}
+                          onClick={() => setShowCategoryDropdown(false)}
+                          className="w-full text-left px-3 py-2 text-sm text-mc-accent hover:bg-mc-bg-tertiary border-t border-mc-border"
+                        >
+                          + Create &ldquo;{form.category}&rdquo;
+                        </button>
+                      )}
+                    </div>
+                  )}
                 </div>
               </div>
 

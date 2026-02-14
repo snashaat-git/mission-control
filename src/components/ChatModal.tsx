@@ -24,13 +24,13 @@ export function ChatModal({ isOpen, onClose, onOpen }: ChatModalProps) {
   }
 
   return (
-    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4 md:p-8">
+    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4 md:p-8" role="dialog" aria-modal="true" aria-labelledby="chat-modal-title">
       <div className="bg-mc-bg-secondary border border-mc-border rounded-lg w-full max-w-4xl h-[80vh] max-h-[800px] flex flex-col shadow-2xl">
         {/* Modal Header */}
         <div className="flex items-center justify-between p-3 border-b border-mc-border flex-shrink-0">
           <div className="flex items-center gap-2">
             <MessageSquare className="w-5 h-5 text-mc-accent" />
-            <h2 className="font-semibold">Chat</h2>
+            <h2 id="chat-modal-title" className="font-semibold">Chat</h2>
           </div>
           <div className="flex items-center gap-2">
             <button
@@ -42,7 +42,8 @@ export function ChatModal({ isOpen, onClose, onOpen }: ChatModalProps) {
             </button>
             <button
               onClick={onClose}
-              className="p-1.5 hover:bg-mc-bg-tertiary rounded"
+              className="p-1.5 hover:bg-mc-bg-tertiary rounded focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-mc-accent"
+              aria-label="Close"
             >
               <X className="w-5 h-5" />
             </button>

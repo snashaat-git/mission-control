@@ -25,7 +25,7 @@ export interface MissionControlConfig {
 const DEFAULT_CONFIG: MissionControlConfig = {
   workspaceBasePath: '~/Documents/Shared',
   projectsPath: '~/Documents/Shared/projects',
-  missionControlUrl: typeof window !== 'undefined' ? window.location.origin : 'http://localhost:3000',
+  missionControlUrl: typeof window !== 'undefined' ? window.location.origin : `http://localhost:${process.env.PORT || '3001'}`,
   defaultProjectName: 'mission-control',
 };
 
@@ -119,7 +119,8 @@ export function expandPath(path: string): string {
 export function getMissionControlUrl(): string {
   // Server-side: use env var or auto-detect
   if (typeof window === 'undefined') {
-    return process.env.MISSION_CONTROL_URL || 'http://localhost:3000';
+    const port = process.env.PORT || '3001';
+    return process.env.MISSION_CONTROL_URL || `http://localhost:${port}`;
   }
 
   // Client-side: use config

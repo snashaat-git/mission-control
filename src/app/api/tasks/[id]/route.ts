@@ -3,7 +3,7 @@ import { v4 as uuidv4 } from 'uuid';
 import { queryOne, run, queryAll } from '@/lib/db';
 import { broadcast } from '@/lib/events';
 import { getMissionControlUrl } from '@/lib/config';
-import type { Task, UpdateTaskRequest, Agent, TaskDeliverable } from '@/lib/types';
+import type { Task, UpdateTaskRequest, Agent } from '@/lib/types';
 
 // Logger for task operations
 function log(level: 'info' | 'warn' | 'error', context: string, message: string, meta?: Record<string, unknown>) {
@@ -24,11 +24,12 @@ function log(level: 'info' | 'warn' | 'error', context: string, message: string,
 // Format: from_status -> allowed_to_statuses[]
 const WORKFLOW_RULES: Record<string, string[]> = {
   'inbox': ['assigned', 'cancelled'],
-  'assigned': ['in_progress', 'inbox', 'cancelled'],
-  'in_progress': ['testing', 'assigned', 'cancelled'],
+  'assigned': ['in_progress', 'inbox', 'failed', 'cancelled'],
+  'in_progress': ['testing', 'assigned', 'failed', 'cancelled'],
   'testing': ['review', 'assigned', 'in_progress', 'cancelled'],
   'review': ['done', 'assigned', 'in_progress', 'cancelled'],
   'done': ['assigned', 'in_progress', 'cancelled'],  // For rework
+  'failed': ['assigned', 'inbox'],  // For retry
   'cancelled': ['inbox']  // For revival
 };
 
@@ -45,6 +46,9 @@ const TRANSITION_PERMISSIONS: Record<string, Record<string, 'user' | 'agent' | '
   'review->done': { default: 'user' },  // User (human) can mark as done
   'review->assigned': { default: 'user' },  // User can reject to rework
   '*->cancelled': { default: 'user' },
+  '*->failed': { default: 'system' },  // System can mark as failed
+  'failed->assigned': { default: 'user' },  // User can retry
+  'failed->inbox': { default: 'user' },  // User can reset
   'done->assigned': { default: 'user' },  // User can send back for rework
   'cancelled->inbox': { default: 'user' }
 };
@@ -167,6 +171,34 @@ export async function PATCH(
       actorId,
       currentStatus: existing.status 
     });
+
+    // Dependency block enforcement: prevent advancing a blocked task
+    if (body.status && body.status !== existing.status) {
+      const advancingStatuses = ['assigned', 'in_progress', 'testing', 'review', 'done'];
+      if (advancingStatuses.includes(body.status)) {
+        const incompleteDeps = queryAll<{ dependency_id: string; title: string; status: string }>(
+          `SELECT td.dependency_id, t.title, t.status
+           FROM task_dependencies td
+           JOIN tasks t ON td.dependency_id = t.id
+           WHERE td.task_id = ? AND t.status != 'done'`,
+          [id]
+        );
+        if (incompleteDeps.length > 0) {
+          log('warn', 'Patch', 'Task blocked by incomplete dependencies', {
+            taskId: id,
+            requestedStatus: body.status,
+            blockers: incompleteDeps.map(d => ({ id: d.dependency_id, title: d.title, status: d.status }))
+          });
+          return NextResponse.json(
+            {
+              error: 'Task is blocked by incomplete dependencies',
+              blockers: incompleteDeps.map(d => ({ id: d.dependency_id, title: d.title, status: d.status })),
+            },
+            { status: 409 }
+          );
+        }
+      }
+    }
 
     // Workflow enforcement for status changes
     if (body.status && body.status !== existing.status) {
@@ -383,6 +415,44 @@ export async function PATCH(
       broadcast({ type: 'task_updated', payload: task });
     }
 
+    // Cascade: when a task moves to 'done', check if any dependent tasks are now unblocked
+    if (body.status === 'done') {
+      const dependentTaskIds = queryAll<{ task_id: string }>(
+        'SELECT task_id FROM task_dependencies WHERE dependency_id = ?',
+        [id]
+      );
+
+      for (const { task_id: depTaskId } of dependentTaskIds) {
+        // Check if ALL dependencies for this dependent task are now done
+        const remaining = queryOne<{ c: number }>(
+          `SELECT COUNT(*) as c FROM task_dependencies td
+           JOIN tasks t ON td.dependency_id = t.id
+           WHERE td.task_id = ? AND t.status != 'done'`,
+          [depTaskId]
+        );
+
+        if (remaining && remaining.c === 0) {
+          // Task is now unblocked - log activity and broadcast
+          const depTask = queryOne<Task>('SELECT * FROM tasks WHERE id = ?', [depTaskId]);
+          if (depTask) {
+            run(
+              `INSERT INTO task_activities (id, task_id, agent_id, activity_type, message, created_at)
+               VALUES (?, ?, NULL, 'status_changed', ?, ?)`,
+              [uuidv4(), depTaskId, `Task unblocked: all dependencies completed`, now]
+            );
+
+            log('info', 'Patch', 'Dependent task unblocked', {
+              completedTaskId: id,
+              unblockedTaskId: depTaskId,
+              unblockedTitle: depTask.title
+            });
+
+            broadcast({ type: 'dependency_changed', payload: { taskId: depTaskId, unblocked: true } });
+          }
+        }
+      }
+    }
+
     // Trigger auto-dispatch if needed
     if (shouldDispatch && task?.assigned_agent_id) {
       const alreadyDispatched = queryOne<{ c: number }>(
@@ -398,16 +468,28 @@ export async function PATCH(
           isInProgress
         });
       } else {
-        log('info', 'Patch', 'Triggering auto-dispatch', { taskId: id });
-        
         const missionControlUrl = getMissionControlUrl();
+        log('info', 'Patch', 'Triggering auto-dispatch', { taskId: id, dispatchUrl: `${missionControlUrl}/api/tasks/${id}/dispatch` });
+
         fetch(`${missionControlUrl}/api/tasks/${id}/dispatch`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' }
+        }).then(async (res) => {
+          if (!res.ok) {
+            const body = await res.json().catch(() => ({}));
+            log('error', 'Patch', 'Auto-dispatch returned error', {
+              taskId: id,
+              status: res.status,
+              error: body.message || body.error || 'Unknown'
+            });
+          } else {
+            log('info', 'Patch', 'Auto-dispatch succeeded', { taskId: id });
+          }
         }).catch(err => {
-          log('error', 'Patch', 'Auto-dispatch failed', { 
-            taskId: id, 
-            error: err instanceof Error ? err.message : 'Unknown' 
+          log('error', 'Patch', 'Auto-dispatch network error', {
+            taskId: id,
+            url: `${missionControlUrl}/api/tasks/${id}/dispatch`,
+            error: err instanceof Error ? err.message : 'Unknown'
           });
         });
       }
@@ -446,6 +528,7 @@ export async function DELETE(
     }
 
     // Delete related records
+    run('DELETE FROM task_dependencies WHERE task_id = ? OR dependency_id = ?', [id, id]);
     run('DELETE FROM openclaw_sessions WHERE task_id = ?', [id]);
     run('DELETE FROM events WHERE task_id = ?', [id]);
     run('UPDATE conversations SET task_id = NULL WHERE task_id = ?', [id]);

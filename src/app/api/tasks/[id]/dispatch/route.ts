@@ -261,35 +261,40 @@ If you need help or clarification, ask me (Charlie).`;
     
     // Send message to agent's session
     try {
-      const targetSessionKey = (agent as any).session_key || `agent:${agent.name.toLowerCase().replace(/\s+/g, '-')}:main`;
+      // Determine session key: use agent's configured key, or fall back to gateway default
+      // The gateway's main agent session is always "agent:main:main"
+      const agentSessionKey = (agent as any).session_key as string | undefined;
+      const targetSessionKey = agentSessionKey || 'agent:main:main';
       log('info', 'SendMessage', 'Preparing to send task to agent', { 
         taskId: task.id, 
         targetSessionKey,
         agentName: agent.name 
       });
 
-      // Ensure the target session is active
+      // Check if the target session is active on the gateway
       try {
-        const live = await client.listSessions();
-        const isActive = Array.isArray(live) ? (live as any[]).some((s) => s?.key === targetSessionKey) : false;
-        log('info', 'SendMessage', 'Session status check', { 
-          targetSessionKey, 
+        const liveResult = await client.listSessions();
+        // Gateway returns { sessions: [...] } or a flat array
+        const liveList = Array.isArray(liveResult)
+          ? liveResult
+          : (Array.isArray((liveResult as any)?.sessions) ? (liveResult as any).sessions : []);
+        const isActive = liveList.some((s: any) => s?.key === targetSessionKey);
+        log('info', 'SendMessage', 'Session status check', {
+          targetSessionKey,
           isActive,
-          totalSessions: Array.isArray(live) ? live.length : 0 
+          totalSessions: liveList.length
         });
-        
+
         if (!isActive) {
-          log('info', 'SendMessage', 'Waking inactive session', { targetSessionKey });
-          await client.call('wake', { sessionKey: targetSessionKey });
-          log('info', 'SendMessage', 'Session wake initiated');
+          log('warn', 'SendMessage', 'Target session is not active on gateway', { targetSessionKey });
+          warnings.push(`Session "${targetSessionKey}" is not active on the gateway — message may not be delivered`);
         }
       } catch (e) {
         const errorMsg = e instanceof Error ? e.message : String(e);
-        log('warn', 'SendMessage', 'Wake warning (non-critical)', { 
-          targetSessionKey, 
-          error: errorMsg 
+        log('warn', 'SendMessage', 'Session check warning (non-critical)', {
+          targetSessionKey,
+          error: errorMsg
         });
-        warnings.push(`Session wake warning: ${errorMsg}`);
       }
 
       // Apply per-agent model override
@@ -305,7 +310,7 @@ If you need help or clarification, ask me (Charlie).`;
             targetSessionKey, 
             model: effectiveModel 
           });
-          await client.call('sessions.patch', { sessionKey: targetSessionKey, model: effectiveModel });
+          await client.call('sessions.patch', { key: targetSessionKey, model: effectiveModel });
         }
       } catch (e) {
         const errorMsg = e instanceof Error ? e.message : String(e);

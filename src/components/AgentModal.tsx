@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { X, Save, Trash2 } from 'lucide-react';
 import { useMissionControl } from '@/lib/store';
 import type { Agent, AgentStatus } from '@/lib/types';
@@ -12,23 +12,27 @@ interface AgentModalProps {
 
 const EMOJI_OPTIONS = ['🤖', '🦞', '💻', '🔍', '✍️', '🎨', '📊', '🧠', '⚡', '🚀', '🎯', '🔧'];
 
-// Available OpenClaw models for agent routing
-const AVAILABLE_MODELS = [
-  { id: '', label: 'Use System Default' },
-  { id: 'ollama/kimi-k2.5:cloud', label: 'Kimi K2.5 (Local Ollama)' },
-  { id: 'openrouter/stepfun/step-3.5-flash:free', label: 'StepFun 3.5 Flash (Free)' },
-  { id: 'openrouter/anthropic/claude-sonnet-4', label: 'Claude Sonnet 4' },
-  { id: 'openrouter/openai/gpt-4o', label: 'GPT-4o' },
-  { id: 'openai-codex/gpt-5.2', label: 'GPT-5.2 (Codex)' },
-  { id: 'openrouter/google/gemini-2.5-flash-preview', label: 'Gemini 2.5 Flash' },
-  { id: 'openrouter/google/gemini-2.0-flash-001', label: 'Gemini 2.0 Flash' },
-  { id: 'openrouter/deepseek/deepseek-chat', label: 'DeepSeek Chat' },
-  { id: 'openrouter/mistralai/mistral-large', label: 'Mistral Large' },
-];
+interface ModelOption {
+  id: string;
+  label: string;
+}
 
 export function AgentModal({ agent, onClose }: AgentModalProps) {
   const { addAgent, updateAgent, agents } = useMissionControl();
   const [activeTab, setActiveTab] = useState<'info' | 'soul' | 'user' | 'agents'>('info');
+  const [availableModels, setAvailableModels] = useState<ModelOption[]>([]);
+  const [primaryModel, setPrimaryModel] = useState<string | null>(null);
+
+  useEffect(() => {
+    fetch('/api/openclaw/models')
+      .then((res) => res.json())
+      .then((data) => {
+        const models: ModelOption[] = data.models || [];
+        setAvailableModels(models);
+        setPrimaryModel(data.primary || null);
+      })
+      .catch(() => {});
+  }, []);
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   const [form, setForm] = useState({
@@ -101,16 +105,17 @@ export function AgentModal({ agent, onClose }: AgentModalProps) {
   ] as const;
 
   return (
-    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-      <div className="bg-mc-bg-secondary border border-mc-border rounded-lg w-full max-w-2xl max-h-[90vh] flex flex-col">
+    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-2 sm:p-4" role="dialog" aria-modal="true" aria-labelledby="agent-modal-title">
+      <div className="bg-mc-bg-secondary border border-mc-border rounded-lg w-full max-w-2xl max-h-[95vh] sm:max-h-[90vh] flex flex-col">
         {/* Header */}
         <div className="flex items-center justify-between p-4 border-b border-mc-border">
-          <h2 className="text-lg font-semibold">
+          <h2 id="agent-modal-title" className="text-lg font-semibold">
             {agent ? `Edit ${agent.name}` : 'Create New Agent'}
           </h2>
           <button
             onClick={onClose}
-            className="p-1 hover:bg-mc-bg-tertiary rounded"
+            className="p-1 hover:bg-mc-bg-tertiary rounded focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-mc-accent"
+            aria-label="Close"
           >
             <X className="w-5 h-5" />
           </button>
@@ -233,14 +238,22 @@ export function AgentModal({ agent, onClose }: AgentModalProps) {
                   onChange={(e) => setForm({ ...form, model: e.target.value })}
                   className="w-full bg-mc-bg border border-mc-border rounded px-3 py-2 text-sm focus:outline-none focus:border-mc-accent"
                 >
-                  {AVAILABLE_MODELS.map((model) => (
+                  <option value="">
+                    {primaryModel ? `System Default (${primaryModel})` : 'Use System Default'}
+                  </option>
+                  {availableModels.map((model) => (
                     <option key={model.id} value={model.id}>
                       {model.label}
                     </option>
                   ))}
                 </select>
+                {form.model && !availableModels.some((m) => m.id === form.model) && (
+                  <p className="text-xs text-mc-accent-yellow mt-1">
+                    Current model "{form.model}" is not in openclaw.json — it may have been removed.
+                  </p>
+                )}
                 <p className="text-xs text-mc-text-secondary mt-1">
-                  Select a specific model for this agent, or use system default. Only applies when OpenClaw supports per-agent model overrides.
+                  Models loaded from ~/.openclaw/openclaw.json. Select a specific model for this agent, or use the system default.
                 </p>
               </div>
 

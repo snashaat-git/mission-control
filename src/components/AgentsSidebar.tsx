@@ -1,20 +1,24 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { Plus, ChevronRight, Zap, ZapOff, Loader2 } from 'lucide-react';
+import { Plus, ChevronRight, Zap, ZapOff, Loader2, MessageSquare, X } from 'lucide-react';
 import { useMissionControl } from '@/lib/store';
 import type { Agent, AgentStatus, OpenClawSession } from '@/lib/types';
 import { AgentModal } from './AgentModal';
+import { SessionView } from './SessionView';
+import { useToast } from '@/hooks/useToast';
 
 type FilterTab = 'all' | 'working' | 'standby';
 
 export function AgentsSidebar() {
   const { agents, selectedAgent, setSelectedAgent, agentOpenClawSessions, setAgentOpenClawSession } = useMissionControl();
+  const { error: showError } = useToast();
   const [filter, setFilter] = useState<FilterTab>('all');
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [editingAgent, setEditingAgent] = useState<Agent | null>(null);
   const [connectingAgentId, setConnectingAgentId] = useState<string | null>(null);
   const [activeSubAgents, setActiveSubAgents] = useState(0);
+  const [liveViewAgent, setLiveViewAgent] = useState<{ sessionId: string; agent: Agent } | null>(null);
 
   // Load OpenClaw session status for all agents on mount
   useEffect(() => {
@@ -81,7 +85,7 @@ export function AgentsSidebar() {
         } else {
           const error = await res.json();
           console.error('Failed to connect to OpenClaw:', error);
-          alert(`Failed to connect: ${error.error || 'Unknown error'}`);
+          showError(`Failed to connect: ${error.error || 'Unknown error'}`);
         }
       }
     } catch (error) {
@@ -201,7 +205,7 @@ export function AgentsSidebar() {
 
               {/* OpenClaw Connect Button - show for master agents */}
               {agent.is_master && (
-                <div className="px-2 pb-2">
+                <div className="px-2 pb-2 space-y-1">
                   <button
                     onClick={(e) => handleConnectToOpenClaw(agent, e)}
                     disabled={isConnecting}
@@ -228,6 +232,18 @@ export function AgentsSidebar() {
                       </>
                     )}
                   </button>
+                  {openclawSession && (
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setLiveViewAgent({ sessionId: openclawSession.openclaw_session_id, agent });
+                      }}
+                      className="w-full flex items-center justify-center gap-2 px-2 py-1 rounded text-xs bg-mc-bg text-mc-text-secondary hover:bg-mc-bg-tertiary hover:text-mc-accent transition-colors"
+                    >
+                      <MessageSquare className="w-3 h-3" />
+                      <span>Live View</span>
+                    </button>
+                  )}
                 </div>
               )}
             </div>
@@ -255,6 +271,28 @@ export function AgentsSidebar() {
           agent={editingAgent}
           onClose={() => setEditingAgent(null)}
         />
+      )}
+
+      {/* Live Session View Modal */}
+      {liveViewAgent && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4" role="dialog" aria-modal="true" aria-label={`Live session for ${liveViewAgent.agent.name}`}>
+          <div className="bg-mc-bg-secondary border border-mc-border rounded-lg w-full max-w-2xl h-[80vh] flex flex-col relative">
+            <button
+              onClick={() => setLiveViewAgent(null)}
+              className="absolute top-3 right-3 z-10 p-1 hover:bg-mc-bg-tertiary rounded transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-mc-accent"
+              aria-label="Close"
+            >
+              <X className="w-4 h-4 text-mc-text-secondary" />
+            </button>
+            <SessionView
+              sessionId={liveViewAgent.sessionId}
+              sessionStatus="active"
+              agentName={liveViewAgent.agent.name}
+              agentEmoji={liveViewAgent.agent.avatar_emoji}
+              onClose={() => setLiveViewAgent(null)}
+            />
+          </div>
+        </div>
       )}
     </aside>
   );

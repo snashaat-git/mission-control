@@ -2,7 +2,7 @@
 
 export type AgentStatus = 'standby' | 'working' | 'offline';
 
-export type TaskStatus = 'inbox' | 'assigned' | 'in_progress' | 'testing' | 'review' | 'done';
+export type TaskStatus = 'inbox' | 'assigned' | 'in_progress' | 'testing' | 'review' | 'done' | 'failed';
 
 export type TaskPriority = 'low' | 'normal' | 'high' | 'urgent';
 
@@ -15,6 +15,8 @@ export type EventType =
   | 'task_assigned'
   | 'task_status_changed'
   | 'task_completed'
+  | 'task_failed'
+  | 'task_retried'
   | 'message_sent'
   | 'agent_status_changed'
   | 'agent_joined'
@@ -48,11 +50,28 @@ export interface Task {
   business_id: string;
   due_date?: string;
   output_dir?: string;
+  retry_count?: number;
+  max_retries?: number;
   created_at: string;
   updated_at: string;
   // Joined fields
   assigned_agent?: Agent;
   created_by_agent?: Agent;
+  // Dependency metadata (populated by API)
+  dependency_count?: number;
+  blocking_count?: number;
+  is_blocked?: boolean;
+}
+
+export interface TaskDependency {
+  task_id: string;
+  dependency_id: string;
+  created_at: string;
+  // Joined fields
+  dependency_title?: string;
+  dependency_status?: TaskStatus;
+  dependent_title?: string;
+  dependent_status?: TaskStatus;
 }
 
 export interface Conversation {
@@ -112,7 +131,7 @@ export interface OpenClawSession {
   updated_at: string;
 }
 
-export type ActivityType = 'spawned' | 'updated' | 'completed' | 'file_created' | 'status_changed';
+export type ActivityType = 'spawned' | 'updated' | 'completed' | 'file_created' | 'status_changed' | 'failed' | 'retried' | 'timeout';
 
 export interface TaskActivity {
   id: string;
@@ -213,10 +232,12 @@ export type SSEEventType =
   | 'task_updated'
   | 'task_created'
   | 'task_deleted'
+  | 'task_failed'
   | 'activity_logged'
   | 'deliverable_added'
   | 'agent_spawned'
-  | 'agent_completed';
+  | 'agent_completed'
+  | 'dependency_changed';
 
 export interface SSEEvent {
   type: SSEEventType;
@@ -228,6 +249,11 @@ export interface SSEEvent {
     deleted?: boolean;
   } | {
     id: string;  // For task_deleted events
+  } | {
+    taskId?: string;
+    dependencyId?: string;
+    workflowId?: string;
+    unblocked?: boolean;
   };
 }
 

@@ -12,6 +12,8 @@ const state: WatchState = {
   lastSeenSeq: {},
 };
 
+const TASK_TIMEOUT_MINUTES = Number(process.env.MC_TASK_TIMEOUT_MINUTES || 60);
+
 // Very small poller to detect TASK_COMPLETE in agent sessions.
 // Strict mode: only mark completion if agent explicitly emits TASK_COMPLETE.
 export function startTaskCompletionWatcher() {
@@ -50,30 +52,30 @@ export function startTaskCompletionWatcher() {
         // Look for recently created 'completed' activities for in_progress tasks
         if (task.status === 'in_progress') {
           const completionActivity = queryOne<{ id: string; message: string; created_at: string }>(
-            `SELECT id, message, created_at FROM task_activities 
-             WHERE task_id = ? AND activity_type = 'completed' 
+            `SELECT id, message, created_at FROM task_activities
+             WHERE task_id = ? AND activity_type = 'completed'
              AND created_at > datetime('now', '-5 minutes')
              ORDER BY created_at DESC LIMIT 1`,
             [task.id]
           );
-          
+
           if (completionActivity) {
             const summary = completionActivity.message || 'Task completed';
             const now = new Date().toISOString();
-            
+
             console.log('[Watcher] Found completion activity for task', task.id, 'summary:', summary.substring(0, 80));
-            
+
             try {
               transaction(() => {
                 // Move task to testing
                 const newStatus = 'testing';
                 const taskResult = run('UPDATE tasks SET status = ?, updated_at = ? WHERE id = ?', [newStatus, now, task.id]);
                 console.log('[Watcher] Task status updated to', newStatus, 'changes:', taskResult.changes);
-                
+
                 // Agent back to standby
                 const agentResult = run('UPDATE agents SET status = ?, updated_at = ? WHERE id = ?', ['standby', now, agent.id]);
                 console.log('[Watcher] Agent status updated, changes:', agentResult.changes);
-                
+
                 // Event for feed (skip activity creation since it already exists)
                 run(
                   `INSERT INTO events (id, type, agent_id, task_id, message, created_at)
@@ -81,14 +83,17 @@ export function startTaskCompletionWatcher() {
                   [uuidv4(), 'task_completed', agent.id, task.id, `${agent.name} completed: ${summary}`, now]
                 );
               });
-              
+
               // Broadcast update after successful transaction
               const updated = queryOne<Task>('SELECT * FROM tasks WHERE id = ?', [task.id]);
               if (updated) {
                 broadcast({ type: 'task_updated', payload: updated });
                 console.log('[Watcher] Broadcast task update for', task.id, 'new status:', updated.status);
               }
-              
+
+              // Check if completing this task unblocks any dependents
+              checkAndBroadcastUnblocked(task.id);
+
               // Skip to next task - we've handled this one
               continue;
             } catch (txError) {
@@ -97,9 +102,18 @@ export function startTaskCompletionWatcher() {
           }
         }
 
-        // METHOD 2: Legacy - Check chat history for TASK_COMPLETE message
-        const sessionKey = (agent as any).session_key as string | undefined;
-        if (!sessionKey) continue;
+        // FAILURE DETECTION: Check for stale/failed tasks
+        if (task.status === 'in_progress' || task.status === 'assigned') {
+          const failureReason = detectFailure(task, agent);
+          if (failureReason) {
+            handleTaskFailure(task, agent, failureReason);
+            continue;
+          }
+        }
+
+        // METHOD 2: Legacy - Check chat history for TASK_COMPLETE or TASK_FAILED message
+        // Use agent's configured session_key, or fall back to the gateway's main session
+        const sessionKey = ((agent as any).session_key as string | undefined) || 'agent:main:main';
 
         // Pull a small slice of history and look for TASK_COMPLETE.
         // We rely on seq monotonicity where available.
@@ -122,6 +136,16 @@ export function startTaskCompletionWatcher() {
           if (!text) {
             if (seq !== undefined) state.lastSeenSeq[sessionKey] = Math.max(state.lastSeenSeq[sessionKey] ?? -1, seq);
             continue;
+          }
+
+          // Check for TASK_FAILED pattern
+          const failMatch = text.match(/TASK_FAILED:\s*(.+)/i);
+          if (failMatch) {
+            const reason = failMatch[1].trim();
+            console.log('[Watcher] TASK_FAILED detected for task', task.id, 'reason:', reason.substring(0, 80));
+            handleTaskFailure(task, agent, `Agent reported failure: ${reason}`);
+            if (seq !== undefined) state.lastSeenSeq[sessionKey] = Math.max(state.lastSeenSeq[sessionKey] ?? -1, seq);
+            break; // Stop processing this task's history
           }
 
           const m = text.match(/TASK_COMPLETE:\s*(.+)/i);
@@ -210,6 +234,9 @@ export function startTaskCompletionWatcher() {
                 broadcast({ type: 'task_updated', payload: updated });
                 console.log('[Watcher] Broadcast task update for', task.id, 'new status:', updated.status);
               }
+
+              // Check if completing this task unblocks any dependents
+              checkAndBroadcastUnblocked(task.id);
             } catch (txError) {
               console.error('[Watcher] Transaction failed for task', task.id, ':', txError instanceof Error ? txError.message : txError);
             }
@@ -222,6 +249,147 @@ export function startTaskCompletionWatcher() {
       console.error('[Watcher] Unexpected error:', err instanceof Error ? err.message : err);
     }
   }, intervalMs);
+}
+
+/**
+ * Detect if a task has failed based on session state and timeouts.
+ * Returns a failure reason string, or null if no failure detected.
+ */
+function detectFailure(task: Task, agent: Agent): string | null {
+  // Check 1: Agent is offline
+  if (agent.status === 'offline') {
+    return `Agent "${agent.name}" is offline`;
+  }
+
+  // Check 2: Agent's session is failed/inactive
+  const session = queryOne<{ status: string }>(
+    `SELECT status FROM openclaw_sessions
+     WHERE agent_id = ? AND task_id = ?
+     ORDER BY created_at DESC LIMIT 1`,
+    [agent.id, task.id]
+  );
+  if (session && (session.status === 'failed' || session.status === 'inactive')) {
+    return `Agent session is ${session.status}`;
+  }
+
+  // Check 3: Task has been in_progress for too long (timeout)
+  if (task.status === 'in_progress') {
+    const updatedAt = new Date(task.updated_at).getTime();
+    const now = Date.now();
+    const elapsedMinutes = (now - updatedAt) / (1000 * 60);
+
+    if (elapsedMinutes > TASK_TIMEOUT_MINUTES) {
+      return `Task timed out after ${Math.round(elapsedMinutes)} minutes (limit: ${TASK_TIMEOUT_MINUTES}m)`;
+    }
+  }
+
+  return null;
+}
+
+/**
+ * Handle a detected task failure: auto-retry if retries available, otherwise mark as failed.
+ */
+function handleTaskFailure(task: Task, agent: Agent, reason: string) {
+  const now = new Date().toISOString();
+  const retryCount = task.retry_count ?? 0;
+  const maxRetries = task.max_retries ?? 2;
+
+  if (retryCount < maxRetries) {
+    // Auto-retry: move back to assigned
+    console.log('[Watcher] Auto-retrying task', task.id, `(attempt ${retryCount + 1}/${maxRetries})`, 'reason:', reason);
+
+    try {
+      transaction(() => {
+        run(
+          'UPDATE tasks SET status = ?, retry_count = ?, updated_at = ? WHERE id = ?',
+          ['assigned', retryCount + 1, now, task.id]
+        );
+        run(
+          'UPDATE agents SET status = ?, updated_at = ? WHERE id = ?',
+          ['standby', now, agent.id]
+        );
+        run(
+          `INSERT INTO task_activities (id, task_id, agent_id, activity_type, message, metadata, created_at)
+           VALUES (?, ?, ?, ?, ?, ?, ?)`,
+          [uuidv4(), task.id, agent.id, 'retried', `Auto-retry (${retryCount + 1}/${maxRetries}): ${reason}`, JSON.stringify({ retry_count: retryCount + 1, reason }), now]
+        );
+        run(
+          `INSERT INTO events (id, type, agent_id, task_id, message, created_at)
+           VALUES (?, ?, ?, ?, ?, ?)`,
+          [uuidv4(), 'task_retried', agent.id, task.id, `Task "${task.title}" auto-retrying (${retryCount + 1}/${maxRetries}): ${reason}`, now]
+        );
+      });
+
+      const updated = queryOne<Task>('SELECT * FROM tasks WHERE id = ?', [task.id]);
+      if (updated) {
+        broadcast({ type: 'task_updated', payload: updated });
+      }
+    } catch (e) {
+      console.error('[Watcher] Auto-retry transaction failed for task', task.id, ':', e instanceof Error ? e.message : e);
+    }
+  } else {
+    // Retries exhausted: mark as failed
+    console.log('[Watcher] Marking task', task.id, 'as failed (retries exhausted). Reason:', reason);
+
+    try {
+      transaction(() => {
+        run(
+          'UPDATE tasks SET status = ?, updated_at = ? WHERE id = ?',
+          ['failed', now, task.id]
+        );
+        run(
+          'UPDATE agents SET status = ?, updated_at = ? WHERE id = ?',
+          ['standby', now, agent.id]
+        );
+        run(
+          `INSERT INTO task_activities (id, task_id, agent_id, activity_type, message, metadata, created_at)
+           VALUES (?, ?, ?, ?, ?, ?, ?)`,
+          [uuidv4(), task.id, agent.id, 'failed', reason, JSON.stringify({ retry_count: retryCount, max_retries: maxRetries }), now]
+        );
+        run(
+          `INSERT INTO events (id, type, agent_id, task_id, message, created_at)
+           VALUES (?, ?, ?, ?, ?, ?)`,
+          [uuidv4(), 'task_failed', agent.id, task.id, `Task "${task.title}" failed: ${reason}`, now]
+        );
+      });
+
+      const updated = queryOne<Task>('SELECT * FROM tasks WHERE id = ?', [task.id]);
+      if (updated) {
+        broadcast({ type: 'task_failed', payload: updated });
+      }
+    } catch (e) {
+      console.error('[Watcher] Failure transaction failed for task', task.id, ':', e instanceof Error ? e.message : e);
+    }
+  }
+}
+
+/**
+ * After a task moves to testing/done, check if any dependent tasks
+ * are now fully unblocked and broadcast dependency_changed events.
+ */
+function checkAndBroadcastUnblocked(completedTaskId: string) {
+  try {
+    const dependents = queryAll<{ task_id: string }>(
+      'SELECT task_id FROM task_dependencies WHERE dependency_id = ?',
+      [completedTaskId]
+    );
+
+    for (const { task_id: depTaskId } of dependents) {
+      const remaining = queryOne<{ c: number }>(
+        `SELECT COUNT(*) as c FROM task_dependencies td
+         JOIN tasks t ON td.dependency_id = t.id
+         WHERE td.task_id = ? AND t.status != 'done'`,
+        [depTaskId]
+      );
+
+      if (remaining && remaining.c === 0) {
+        console.log('[Watcher] Task', depTaskId, 'is now unblocked');
+        broadcast({ type: 'dependency_changed', payload: { taskId: depTaskId, unblocked: true } });
+      }
+    }
+  } catch (e) {
+    console.warn('[Watcher] checkAndBroadcastUnblocked failed:', e instanceof Error ? e.message : e);
+  }
 }
 
 function extractText(ev: any): string | null {

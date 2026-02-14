@@ -115,6 +115,117 @@ function runMigrations(db: Database.Database): void {
     // Migration not needed or already applied
     console.log('[DB Migration] No migration needed or already applied');
   }
+
+  // Migration: Add retry_count and max_retries columns to tasks
+  try {
+    const taskCols = db.prepare(`PRAGMA table_info(tasks)`).all() as any[];
+    const hasRetryCount = taskCols.some((c) => c?.name === 'retry_count');
+    if (!hasRetryCount) {
+      console.log('[DB Migration] Adding tasks.retry_count and tasks.max_retries columns...');
+      db.exec(`ALTER TABLE tasks ADD COLUMN retry_count INTEGER DEFAULT 0;`);
+      db.exec(`ALTER TABLE tasks ADD COLUMN max_retries INTEGER DEFAULT 2;`);
+    }
+  } catch (e) {
+    console.log('[DB Migration] retry columns migration skipped/failed:', e);
+  }
+
+  // Migration: Add 'failed' to tasks status CHECK constraint
+  try {
+    const testResult = db.prepare(`
+      SELECT sql FROM sqlite_master
+      WHERE type='table' AND name='tasks'
+    `).get() as { sql: string } | undefined;
+
+    if (testResult?.sql && !testResult.sql.includes("'failed'")) {
+      console.log('[DB Migration] Updating tasks table to support failed status...');
+      db.exec(`
+        CREATE TABLE IF NOT EXISTS tasks_new2 (
+          id TEXT PRIMARY KEY,
+          title TEXT NOT NULL,
+          description TEXT,
+          status TEXT DEFAULT 'inbox' CHECK (status IN ('inbox', 'assigned', 'in_progress', 'testing', 'review', 'done', 'failed')),
+          priority TEXT DEFAULT 'normal' CHECK (priority IN ('low', 'normal', 'high', 'urgent')),
+          assigned_agent_id TEXT REFERENCES agents(id),
+          created_by_agent_id TEXT REFERENCES agents(id),
+          business_id TEXT DEFAULT 'default',
+          due_date TEXT,
+          output_dir TEXT,
+          retry_count INTEGER DEFAULT 0,
+          max_retries INTEGER DEFAULT 2,
+          created_at TEXT DEFAULT (datetime('now')),
+          updated_at TEXT DEFAULT (datetime('now'))
+        );
+        INSERT INTO tasks_new2 (id, title, description, status, priority, assigned_agent_id, created_by_agent_id, business_id, due_date, output_dir, retry_count, max_retries, created_at, updated_at)
+          SELECT id, title, description, status, priority, assigned_agent_id, created_by_agent_id, business_id, due_date, output_dir,
+                 COALESCE(retry_count, 0), COALESCE(max_retries, 2), created_at, updated_at
+          FROM tasks;
+        DROP TABLE tasks;
+        ALTER TABLE tasks_new2 RENAME TO tasks;
+        CREATE INDEX IF NOT EXISTS idx_tasks_status ON tasks(status);
+        CREATE INDEX IF NOT EXISTS idx_tasks_assigned ON tasks(assigned_agent_id);
+      `);
+      console.log('[DB Migration] Tasks table updated with failed status');
+    }
+  } catch (error) {
+    console.log('[DB Migration] failed status migration skipped:', error);
+  }
+
+  // Migration: Create task_dependencies table
+  try {
+    const tableExists = db.prepare(
+      `SELECT name FROM sqlite_master WHERE type='table' AND name='task_dependencies'`
+    ).get();
+    if (!tableExists) {
+      console.log('[DB Migration] Creating task_dependencies table...');
+      db.exec(`
+        CREATE TABLE IF NOT EXISTS task_dependencies (
+          task_id TEXT NOT NULL REFERENCES tasks(id) ON DELETE CASCADE,
+          dependency_id TEXT NOT NULL REFERENCES tasks(id) ON DELETE CASCADE,
+          created_at TEXT DEFAULT (datetime('now')),
+          PRIMARY KEY (task_id, dependency_id),
+          CHECK (task_id != dependency_id)
+        );
+        CREATE INDEX IF NOT EXISTS idx_task_deps_task ON task_dependencies(task_id);
+        CREATE INDEX IF NOT EXISTS idx_task_deps_dep ON task_dependencies(dependency_id);
+      `);
+      console.log('[DB Migration] task_dependencies table created');
+    }
+  } catch (e) {
+    console.log('[DB Migration] task_dependencies migration skipped/failed:', e);
+  }
+
+  // Migration: Create FTS5 virtual table for full-text search on tasks
+  try {
+    const ftsExists = db.prepare(
+      `SELECT name FROM sqlite_master WHERE type='table' AND name='tasks_fts'`
+    ).get();
+    if (!ftsExists) {
+      console.log('[DB Migration] Creating FTS5 index for tasks...');
+      db.exec(`
+        CREATE VIRTUAL TABLE tasks_fts USING fts5(
+          title, description, content=tasks, content_rowid=rowid
+        );
+
+        -- Triggers to keep FTS index in sync with tasks table
+        CREATE TRIGGER tasks_fts_insert AFTER INSERT ON tasks BEGIN
+          INSERT INTO tasks_fts(rowid, title, description) VALUES (new.rowid, new.title, new.description);
+        END;
+        CREATE TRIGGER tasks_fts_delete AFTER DELETE ON tasks BEGIN
+          INSERT INTO tasks_fts(tasks_fts, rowid, title, description) VALUES ('delete', old.rowid, old.title, old.description);
+        END;
+        CREATE TRIGGER tasks_fts_update AFTER UPDATE ON tasks BEGIN
+          INSERT INTO tasks_fts(tasks_fts, rowid, title, description) VALUES ('delete', old.rowid, old.title, old.description);
+          INSERT INTO tasks_fts(rowid, title, description) VALUES (new.rowid, new.title, new.description);
+        END;
+
+        -- Rebuild to index existing rows
+        INSERT INTO tasks_fts(tasks_fts) VALUES ('rebuild');
+      `);
+      console.log('[DB Migration] FTS5 index created and populated');
+    }
+  } catch (e) {
+    console.log('[DB Migration] FTS5 migration skipped/failed:', e);
+  }
 }
 
 export function closeDb(): void {

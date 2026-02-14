@@ -10,7 +10,8 @@ import { SSEDebugPanel } from '@/components/SSEDebugPanel';
 import { useMissionControl } from '@/lib/store';
 import { useSSE } from '@/hooks/useSSE';
 import { debug } from '@/lib/debug';
-import { MessageSquare, PanelRightOpen, PanelRightClose } from 'lucide-react';
+import { MessageSquare, PanelRightOpen, PanelRightClose, PanelLeftOpen, PanelLeftClose } from 'lucide-react';
+import { SearchBar } from '@/components/SearchBar';
 import type { Task } from '@/lib/types';
 
 export default function MissionControlPage() {
@@ -27,6 +28,7 @@ export default function MissionControlPage() {
 
   const [showChat, setShowChat] = useState(false);
   const [showLiveFeed, setShowLiveFeed] = useState(false);
+  const [showSidebar, setShowSidebar] = useState(true);
   const [sidebarWidth, setSidebarWidth] = useState(18); // percentage
   const [liveFeedWidth, setLiveFeedWidth] = useState(20); // percentage
   const [isResizing, setIsResizing] = useState(false);
@@ -34,15 +36,20 @@ export default function MissionControlPage() {
   // Connect to SSE for real-time updates
   useSSE();
 
-  // Handle resize
+  // Handle resize - auto-collapse panels on small screens
   useEffect(() => {
     const handleResize = () => {
-      // On small screens, auto-collapse panels
       if (window.innerWidth < 768) {
         setShowLiveFeed(false);
+        setShowSidebar(false);
+      } else {
+        setShowSidebar(true);
       }
     };
-    
+
+    // Run once on mount
+    handleResize();
+
     window.addEventListener('resize', handleResize);
     return () => window.removeEventListener('resize', handleResize);
   }, []);
@@ -137,10 +144,56 @@ export default function MissionControlPage() {
 
   if (isLoading) {
     return (
-      <div className="min-h-screen bg-mc-bg flex items-center justify-center">
-        <div className="text-center">
-          <div className="text-4xl mb-4 animate-pulse">🦞</div>
-          <p className="text-mc-text-secondary">Loading Mission Control...</p>
+      <div className="h-screen flex flex-col bg-mc-bg overflow-hidden">
+        {/* Skeleton Header */}
+        <div className="h-14 border-b border-mc-border bg-mc-bg-secondary flex items-center px-6 gap-4">
+          <div className="w-32 h-5 bg-mc-bg-tertiary rounded animate-pulse" />
+          <div className="flex-1" />
+          <div className="w-20 h-5 bg-mc-bg-tertiary rounded animate-pulse" />
+          <div className="w-20 h-5 bg-mc-bg-tertiary rounded animate-pulse" />
+        </div>
+
+        <div className="flex-1 flex overflow-hidden">
+          {/* Skeleton Sidebar */}
+          <div className="w-[18%] min-w-[200px] bg-mc-bg-secondary border-r border-mc-border p-3 space-y-3">
+            <div className="w-24 h-4 bg-mc-bg-tertiary rounded animate-pulse" />
+            {[1, 2, 3, 4, 5].map((i) => (
+              <div key={i} className="flex items-center gap-2 p-2">
+                <div className="w-8 h-8 bg-mc-bg-tertiary rounded-full animate-pulse" />
+                <div className="flex-1 space-y-1.5">
+                  <div className="w-20 h-3 bg-mc-bg-tertiary rounded animate-pulse" />
+                  <div className="w-14 h-2.5 bg-mc-bg-tertiary rounded animate-pulse" />
+                </div>
+              </div>
+            ))}
+          </div>
+
+          {/* Skeleton Kanban */}
+          <div className="flex-1 flex flex-col">
+            <div className="h-10 border-b border-mc-border" />
+            <div className="flex-1 flex gap-3 p-3">
+              {[1, 2, 3, 4, 5, 6].map((col) => (
+                <div key={col} className="flex-1 min-w-[140px] bg-mc-bg rounded border border-mc-border border-t-2 border-t-mc-bg-tertiary">
+                  <div className="p-2 border-b border-mc-border flex justify-between">
+                    <div className="w-16 h-3 bg-mc-bg-tertiary rounded animate-pulse" />
+                    <div className="w-5 h-3 bg-mc-bg-tertiary rounded animate-pulse" />
+                  </div>
+                  <div className="p-2 space-y-2">
+                    {Array.from({ length: Math.max(1, 3 - col) }).map((_, j) => (
+                      <div key={j} className="bg-mc-bg-secondary border border-mc-border rounded p-3 space-y-2">
+                        <div className="w-full h-3 bg-mc-bg-tertiary rounded animate-pulse" />
+                        <div className="w-2/3 h-2.5 bg-mc-bg-tertiary rounded animate-pulse" />
+                        <div className="flex justify-between">
+                          <div className="w-12 h-2.5 bg-mc-bg-tertiary rounded animate-pulse" />
+                          <div className="w-10 h-2.5 bg-mc-bg-tertiary rounded animate-pulse" />
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
         </div>
       </div>
     );
@@ -151,38 +204,61 @@ export default function MissionControlPage() {
       <Header />
 
       {/* CSS Grid Layout - truly responsive */}
-      <div 
-        className="flex-1 grid overflow-hidden"
+      <div
+        className="flex-1 grid overflow-hidden relative"
         style={{
-          gridTemplateColumns: showLiveFeed 
-            ? `${sidebarWidth}% 1fr ${liveFeedWidth}%`
-            : `${sidebarWidth}% 1fr`,
+          gridTemplateColumns: showSidebar
+            ? (showLiveFeed
+              ? `${sidebarWidth}% 1fr ${liveFeedWidth}%`
+              : `${sidebarWidth}% 1fr`)
+            : (showLiveFeed ? `1fr ${liveFeedWidth}%` : '1fr'),
           transition: isResizing ? 'none' : 'grid-template-columns 0.2s ease'
         }}
       >
-        {/* Agents Sidebar - scales with browser width */}
-        <div className="min-w-[200px] max-w-[400px] bg-mc-bg-secondary border-r border-mc-border flex flex-col overflow-hidden">
-          <AgentsSidebar />
-        </div>
+        {/* Agents Sidebar - hidden on mobile, collapsible */}
+        {showSidebar && (
+          <div className="min-w-[200px] max-w-[400px] bg-mc-bg-secondary border-r border-mc-border flex flex-col overflow-hidden max-md:fixed max-md:inset-y-14 max-md:left-0 max-md:z-40 max-md:w-72 max-md:max-w-[80vw] max-md:shadow-2xl">
+            <AgentsSidebar />
+          </div>
+        )}
+
+        {/* Mobile sidebar overlay */}
+        {showSidebar && (
+          <div
+            className="hidden max-md:block fixed inset-0 bg-black/30 z-30"
+            onClick={() => setShowSidebar(false)}
+          />
+        )}
 
         {/* Main Content Area - fills remaining space */}
-        <div className="flex flex-col min-w-0 overflow-hidden">
+        <div id="main-content" className="flex flex-col min-w-0 overflow-hidden">
           {/* Toolbar */}
-          <div className="flex items-center justify-end gap-2 p-2 border-b border-mc-border">
+          <div className="flex items-center gap-2 p-2 border-b border-mc-border">
+            <button
+              onClick={() => setShowSidebar(!showSidebar)}
+              className="p-1.5 rounded text-mc-text-secondary hover:text-mc-text hover:bg-mc-bg-tertiary transition-colors md:hidden min-w-[44px] min-h-[44px] flex items-center justify-center"
+              aria-label={showSidebar ? 'Hide sidebar' : 'Show sidebar'}
+            >
+              {showSidebar ? <PanelLeftClose className="w-4 h-4" /> : <PanelLeftOpen className="w-4 h-4" />}
+            </button>
+            <SearchBar />
+            <div className="flex-1" />
             <button
               onClick={() => setShowLiveFeed(!showLiveFeed)}
-              className={`flex items-center gap-2 px-3 py-1.5 rounded text-sm transition-colors whitespace-nowrap ${
-                showLiveFeed 
-                  ? 'bg-mc-accent/20 text-mc-accent' 
+              className={`flex items-center gap-2 px-3 py-1.5 rounded text-sm transition-colors whitespace-nowrap min-h-[44px] md:min-h-0 ${
+                showLiveFeed
+                  ? 'bg-mc-accent/20 text-mc-accent'
                   : 'bg-mc-bg-tertiary text-mc-text-secondary hover:text-mc-text'
               }`}
+              aria-label={showLiveFeed ? 'Hide live feed' : 'Show live feed'}
             >
               {showLiveFeed ? <PanelRightClose className="w-4 h-4" /> : <PanelRightOpen className="w-4 h-4" />}
               <span className="hidden sm:inline">Live Feed</span>
             </button>
             <button
               onClick={() => setShowChat(true)}
-              className="flex items-center gap-2 px-3 py-1.5 bg-mc-accent/20 text-mc-accent rounded text-sm hover:bg-mc-accent/30 transition-colors"
+              className="flex items-center gap-2 px-3 py-1.5 bg-mc-accent/20 text-mc-accent rounded text-sm hover:bg-mc-accent/30 transition-colors min-h-[44px] md:min-h-0"
+              aria-label="Open chat"
             >
               <MessageSquare className="w-4 h-4" />
               <span className="hidden sm:inline">Chat</span>
@@ -194,7 +270,7 @@ export default function MissionControlPage() {
 
         {/* Live Feed - scales with browser width when shown */}
         {showLiveFeed && (
-          <div className="min-w-[250px] max-w-[500px] bg-mc-bg-secondary border-l border-mc-border flex flex-col overflow-hidden">
+          <div className="min-w-[250px] max-w-[500px] bg-mc-bg-secondary border-l border-mc-border flex flex-col overflow-hidden max-md:hidden">
             <LiveFeed />
           </div>
         )}
