@@ -258,6 +258,29 @@ function runMigrations(db: Database.Database): void {
   } catch (e) {
     console.log('[DB Migration] call_logs migration skipped/failed:', e);
   }
+
+  // Migration: Create contacts table for phonebook
+  try {
+    const tableExists = db.prepare(
+      `SELECT name FROM sqlite_master WHERE type='table' AND name='contacts'`
+    ).get();
+    if (!tableExists) {
+      console.log('[DB Migration] Creating contacts table...');
+      db.exec(`
+        CREATE TABLE IF NOT EXISTS contacts (
+          id TEXT PRIMARY KEY,
+          name TEXT NOT NULL,
+          phone_number TEXT NOT NULL,
+          label TEXT,
+          created_at TEXT DEFAULT (datetime('now'))
+        );
+        CREATE INDEX IF NOT EXISTS idx_contacts_name ON contacts(name);
+      `);
+      console.log('[DB Migration] contacts table created');
+    }
+  } catch (e) {
+    console.log('[DB Migration] contacts migration skipped/failed:', e);
+  }
 }
 
 export function closeDb(): void {
