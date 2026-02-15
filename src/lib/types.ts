@@ -39,6 +39,13 @@ export interface Agent {
   updated_at: string;
 }
 
+export interface TaskNotifySettings {
+  phone?: string;
+  email?: string;
+  on_complete?: boolean;
+  on_failure?: boolean;
+}
+
 export interface Task {
   id: string;
   title: string;
@@ -52,6 +59,7 @@ export interface Task {
   output_dir?: string;
   retry_count?: number;
   max_retries?: number;
+  notify_settings?: TaskNotifySettings;
   created_at: string;
   updated_at: string;
   // Joined fields

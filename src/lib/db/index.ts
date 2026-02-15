@@ -281,6 +281,17 @@ function runMigrations(db: Database.Database): void {
   } catch (e) {
     console.log('[DB Migration] contacts migration skipped/failed:', e);
   }
+
+  // Migration: Add notify_settings column to tasks table
+  try {
+    const cols = db.prepare(`PRAGMA table_info(tasks)`).all() as any[];
+    if (!cols.some((c) => c?.name === 'notify_settings')) {
+      console.log('[DB Migration] Adding tasks.notify_settings column...');
+      db.exec(`ALTER TABLE tasks ADD COLUMN notify_settings TEXT;`);
+    }
+  } catch (e) {
+    console.log('[DB Migration] notify_settings migration skipped/failed:', e);
+  }
 }
 
 export function closeDb(): void {

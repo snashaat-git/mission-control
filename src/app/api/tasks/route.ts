@@ -106,9 +106,11 @@ export async function POST(request: NextRequest) {
     const id = uuidv4();
     const now = new Date().toISOString();
 
+    const notifySettings = body.notify_settings ? JSON.stringify(body.notify_settings) : null;
+
     run(
-      `INSERT INTO tasks (id, title, description, priority, assigned_agent_id, created_by_agent_id, business_id, due_date, created_at, updated_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      `INSERT INTO tasks (id, title, description, priority, assigned_agent_id, created_by_agent_id, business_id, due_date, notify_settings, created_at, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [
         id,
         body.title,
@@ -118,6 +120,7 @@ export async function POST(request: NextRequest) {
         body.created_by_agent_id || null,
         body.business_id || 'default',
         body.due_date || null,
+        notifySettings,
         now,
         now,
       ]

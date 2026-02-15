@@ -2,6 +2,7 @@ import { v4 as uuidv4 } from 'uuid';
 import { queryAll, queryOne, run, transaction } from '@/lib/db';
 import { getOpenClawClient } from '@/lib/openclaw/client';
 import { broadcast } from '@/lib/events';
+import { sendTaskNotification } from '@/lib/task-notifier';
 import type { Task, Agent } from '@/lib/types';
 
 type WatchState = {
@@ -89,6 +90,9 @@ export function startTaskCompletionWatcher() {
               if (updated) {
                 broadcast({ type: 'task_updated', payload: updated });
                 console.log('[Watcher] Broadcast task update for', task.id, 'new status:', updated.status);
+
+                // Send completion notification (phone/email)
+                sendTaskNotification(updated, 'completed', completionActivity.message).catch(() => {});
               }
 
               // Check if completing this task unblocks any dependents
@@ -233,6 +237,9 @@ export function startTaskCompletionWatcher() {
               if (updated) {
                 broadcast({ type: 'task_updated', payload: updated });
                 console.log('[Watcher] Broadcast task update for', task.id, 'new status:', updated.status);
+
+                // Send completion notification (phone/email)
+                sendTaskNotification(updated, 'completed', summary).catch(() => {});
               }
 
               // Check if completing this task unblocks any dependents
@@ -356,6 +363,9 @@ function handleTaskFailure(task: Task, agent: Agent, reason: string) {
       const updated = queryOne<Task>('SELECT * FROM tasks WHERE id = ?', [task.id]);
       if (updated) {
         broadcast({ type: 'task_failed', payload: updated });
+
+        // Send failure notification (phone/email)
+        sendTaskNotification(updated, 'failed', reason).catch(() => {});
       }
     } catch (e) {
       console.error('[Watcher] Failure transaction failed for task', task.id, ':', e instanceof Error ? e.message : e);

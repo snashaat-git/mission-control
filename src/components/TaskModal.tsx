@@ -1,7 +1,7 @@
 'use client';
 
 import { useState } from 'react';
-import { X, Save, Trash2, Activity, Package, Bot, FolderOpen, Scan, FileText, Sparkles, Copy, Plus, Link, RotateCcw } from 'lucide-react';
+import { X, Save, Trash2, Activity, Package, Bot, FolderOpen, Scan, FileText, Sparkles, Copy, Plus, Link, RotateCcw, Phone, Mail, Bell } from 'lucide-react';
 import { useMissionControl } from '@/lib/store';
 import { ActivityLog } from './ActivityLog';
 import { DeliverablesList } from './DeliverablesList';
@@ -9,7 +9,7 @@ import { SessionsList } from './SessionsList';
 import { DependenciesList } from './DependenciesList';
 import { PromptsLibrary } from './PromptsLibrary';
 import { useToast } from '@/hooks/useToast';
-import type { Task, TaskPriority, TaskStatus, Prompt } from '@/lib/types';
+import type { Task, TaskPriority, TaskStatus, TaskNotifySettings, Prompt } from '@/lib/types';
 
 type TabType = 'overview' | 'dependencies' | 'activity' | 'deliverables' | 'sessions';
 
@@ -25,6 +25,14 @@ export function TaskModal({ task, onClose }: TaskModalProps) {
   const [activeTab, setActiveTab] = useState<TabType>('overview');
   const [showPromptsLibrary, setShowPromptsLibrary] = useState(false);
 
+  const existingNotify: TaskNotifySettings = (() => {
+    if (!task?.notify_settings) return {};
+    if (typeof task.notify_settings === 'string') {
+      try { return JSON.parse(task.notify_settings); } catch { return {}; }
+    }
+    return task.notify_settings;
+  })();
+
   const [form, setForm] = useState({
     title: task?.title || '',
     description: task?.description || '',
@@ -34,6 +42,10 @@ export function TaskModal({ task, onClose }: TaskModalProps) {
     due_date: task?.due_date || '',
     output_dir: task?.output_dir || '',
     use_prompt_dir: task?.output_dir === null || task?.output_dir === undefined || task?.output_dir === '',
+    notify_phone: existingNotify.phone || '',
+    notify_email: existingNotify.email || '',
+    notify_on_complete: existingNotify.on_complete !== false,
+    notify_on_failure: existingNotify.on_failure !== false,
   });
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -44,11 +56,25 @@ export function TaskModal({ task, onClose }: TaskModalProps) {
       const url = task ? `/api/tasks/${task.id}` : '/api/tasks';
       const method = task ? 'PATCH' : 'POST';
 
+      const notifySettings: TaskNotifySettings | null =
+        form.notify_phone || form.notify_email
+          ? {
+              phone: form.notify_phone || undefined,
+              email: form.notify_email || undefined,
+              on_complete: form.notify_on_complete,
+              on_failure: form.notify_on_failure,
+            }
+          : null;
+
       const payload = {
-        ...form,
+        title: form.title,
+        description: form.description,
+        priority: form.priority,
+        status: form.status,
         assigned_agent_id: form.assigned_agent_id || null,
         due_date: form.due_date || null,
         output_dir: form.use_prompt_dir ? null : form.output_dir || null,
+        notify_settings: notifySettings,
       };
 
       const res = await fetch(url, {
@@ -444,6 +470,66 @@ export function TaskModal({ task, onClose }: TaskModalProps) {
                 </button>
               </div>
             )}
+          </div>
+          {/* Notifications */}
+          <div className="mt-4 p-4 bg-mc-bg rounded-lg border border-mc-border">
+            <div className="flex items-center gap-2 mb-3">
+              <Bell className="w-4 h-4 text-mc-accent" />
+              <label className="text-sm font-medium text-mc-text">Notify on Complete / Fail</label>
+            </div>
+
+            <div className="space-y-3">
+              <div className="flex items-center gap-2">
+                <Phone className="w-4 h-4 text-mc-text-secondary flex-shrink-0" />
+                <input
+                  type="tel"
+                  value={form.notify_phone}
+                  onChange={(e) => setForm({ ...form, notify_phone: e.target.value })}
+                  placeholder="Phone (e.g. +201006677770)"
+                  className="flex-1 bg-mc-bg-secondary border border-mc-border rounded px-3 py-1.5 text-sm focus:outline-none focus:border-mc-accent"
+                />
+              </div>
+
+              <div className="flex items-center gap-2">
+                <Mail className="w-4 h-4 text-mc-text-secondary flex-shrink-0" />
+                <input
+                  type="email"
+                  value={form.notify_email}
+                  onChange={(e) => setForm({ ...form, notify_email: e.target.value })}
+                  placeholder="Email (e.g. user@example.com)"
+                  className="flex-1 bg-mc-bg-secondary border border-mc-border rounded px-3 py-1.5 text-sm focus:outline-none focus:border-mc-accent"
+                />
+              </div>
+
+              {(form.notify_phone || form.notify_email) && (
+                <div className="flex items-center gap-4 pt-1">
+                  <label className="flex items-center gap-1.5 text-sm text-mc-text-secondary cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={form.notify_on_complete}
+                      onChange={(e) => setForm({ ...form, notify_on_complete: e.target.checked })}
+                      className="w-3.5 h-3.5 rounded border-mc-border"
+                    />
+                    On complete
+                  </label>
+                  <label className="flex items-center gap-1.5 text-sm text-mc-text-secondary cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={form.notify_on_failure}
+                      onChange={(e) => setForm({ ...form, notify_on_failure: e.target.checked })}
+                      className="w-3.5 h-3.5 rounded border-mc-border"
+                    />
+                    On failure
+                  </label>
+                </div>
+              )}
+
+              {!form.notify_phone && !form.notify_email && (
+                <p className="text-xs text-mc-text-secondary">
+                  Add a phone number or email to get notified when this task completes or fails.
+                </p>
+              )}
+            </div>
           </div>
             </form>
           )}

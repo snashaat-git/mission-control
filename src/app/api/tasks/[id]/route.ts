@@ -308,6 +308,10 @@ export async function PATCH(
       updates.push('output_dir = ?');
       values.push((body as any).output_dir);
     }
+    if ((body as any).notify_settings !== undefined) {
+      updates.push('notify_settings = ?');
+      values.push((body as any).notify_settings ? JSON.stringify((body as any).notify_settings) : null);
+    }
 
     // Track if we need to dispatch task
     let shouldDispatch = false;
