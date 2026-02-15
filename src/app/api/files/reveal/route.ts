@@ -2,19 +2,24 @@ import { NextRequest, NextResponse } from 'next/server';
 import { exec } from 'child_process';
 import { promisify } from 'util';
 import path from 'path';
+import fs from 'fs';
+import os from 'os';
 import { getProjectsPath } from '@/lib/config';
 
 const execAsync = promisify(exec);
+
+const HOME = os.homedir();
 
 // Allowed base directories for security
 function getAllowedDirs(): string[] {
   const projectsPath = getProjectsPath();
   return [
     projectsPath,
-    '/Users/snashaat/.openclaw/workspace/projects',
-    '/Users/snashaat/Projects',
-    '/Users/snashaat/Documents',
-  ].map(p => p.replace(/^~/, process.env.HOME || ''));
+    path.join(HOME, '.openclaw/workspace'),
+    path.join(HOME, 'openclaw/workspace'),
+    path.join(HOME, 'Projects'),
+    path.join(HOME, 'Documents'),
+  ].map(p => p.replace(/^~/, HOME));
 }
 
 function isPathAllowed(filePath: string): boolean {
@@ -23,8 +28,22 @@ function isPathAllowed(filePath: string): boolean {
   return allowedDirs.some(dir => resolvedPath.startsWith(path.resolve(dir)));
 }
 
+// Detect platform and return the right "open/reveal" command
+function getRevealCommand(filePath: string): string {
+  const platform = os.platform();
+  // Shell-escape the path
+  const escaped = filePath.replace(/'/g, "'\\''");
+  if (platform === 'darwin') {
+    return `open -R '${escaped}'`;
+  }
+  // Linux: open the containing directory in the default file manager
+  const dir = fs.statSync(filePath).isDirectory() ? filePath : path.dirname(filePath);
+  const escapedDir = dir.replace(/'/g, "'\\''");
+  return `xdg-open '${escapedDir}'`;
+}
+
 // POST /api/files/reveal
-// Opens a file or directory in macOS Finder
+// Opens a file or directory in the system file manager
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
@@ -38,7 +57,7 @@ export async function POST(request: NextRequest) {
     }
 
     // Normalize path and expand tilde
-    const normalizedPath = filePath.replace(/^~/, process.env.HOME || '');
+    const normalizedPath = filePath.replace(/^~/, HOME);
     const resolvedPath = path.resolve(normalizedPath);
 
     // Security check
@@ -50,21 +69,20 @@ export async function POST(request: NextRequest) {
     }
 
     // Check if file exists
-    try {
-      await execAsync(`test -e "${resolvedPath}"`);
-    } catch {
+    if (!fs.existsSync(resolvedPath)) {
       return NextResponse.json(
         { error: 'File or directory not found', path: resolvedPath },
         { status: 404 }
       );
     }
 
-    // Open in Finder
-    await execAsync(`open -R "${resolvedPath}"`);
+    // Open in file manager
+    const cmd = getRevealCommand(resolvedPath);
+    await execAsync(cmd);
 
     return NextResponse.json({
       success: true,
-      message: 'Opened in Finder',
+      message: 'Opened in file manager',
       path: resolvedPath,
     });
   } catch (error) {

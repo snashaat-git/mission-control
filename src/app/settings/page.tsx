@@ -43,14 +43,14 @@ export default function SettingsPage() {
   const [rateLimitTiers, setRateLimitTiers] = useState<RateLimitTier[]>([]);
   const [rateLimitSaving, setRateLimitSaving] = useState(false);
 
-  // Voice call settings (client-side)
+  // Voice call settings (server-side, saved to openclaw.json)
   const [voiceDefaultNumber, setVoiceDefaultNumber] = useState('');
   const [voiceInboundPolicy, setVoiceInboundPolicy] = useState('allowlist');
-
-  useEffect(() => {
-    setVoiceDefaultNumber(localStorage.getItem('mc-voice-default-number') || '');
-    setVoiceInboundPolicy(localStorage.getItem('mc-voice-inbound-policy') || 'allowlist');
-  }, []);
+  const [voicePublicUrl, setVoicePublicUrl] = useState('');
+  const [voiceInboundGreeting, setVoiceInboundGreeting] = useState('');
+  const [voiceProvider, setVoiceProvider] = useState('');
+  const [voiceSaving, setVoiceSaving] = useState(false);
+  const [voiceDetectingNgrok, setVoiceDetectingNgrok] = useState(false);
 
   // Notification settings (client-side only)
   const [notifEnabled, setNotifEnabled] = useState(false);
@@ -78,6 +78,17 @@ export default function SettingsPage() {
         setGatewayUrl(data.gatewayUrl || 'ws://127.0.0.1:18789');
         setGatewayToken(data.gatewayToken || '');
         setGatewayAutoDetected(data.autoDetected || { openclawJsonToken: false, deviceIdentity: false });
+      })
+      .catch(() => {});
+    // Fetch voice call settings from server
+    fetch('/api/settings/voice-call')
+      .then(res => res.json())
+      .then(data => {
+        setVoicePublicUrl(data.publicUrl || '');
+        setVoiceDefaultNumber(data.fromNumber || '');
+        setVoiceInboundPolicy(data.inboundPolicy || 'disabled');
+        setVoiceInboundGreeting(data.inboundGreeting || '');
+        setVoiceProvider(data.provider || '');
       })
       .catch(() => {});
     // Fetch current connection status
@@ -177,6 +188,52 @@ export default function SettingsPage() {
       setGatewayStatus({ connected: false, error: 'Failed to reach status endpoint' });
     } finally {
       setGatewayTesting(false);
+    }
+  };
+
+  const handleVoiceSave = async () => {
+    setVoiceSaving(true);
+    setError(null);
+    try {
+      const res = await fetch('/api/settings/voice-call', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          publicUrl: voicePublicUrl,
+          fromNumber: voiceDefaultNumber,
+          inboundPolicy: voiceInboundPolicy,
+          inboundGreeting: voiceInboundGreeting,
+        }),
+      });
+      if (res.ok) {
+        setSaveSuccess(true);
+        setTimeout(() => setSaveSuccess(false), 3000);
+      } else {
+        const data = await res.json();
+        setError(data.error || 'Failed to save voice settings');
+      }
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to save');
+    } finally {
+      setVoiceSaving(false);
+    }
+  };
+
+  const handleDetectNgrok = async () => {
+    setVoiceDetectingNgrok(true);
+    try {
+      const res = await fetch('/api/settings/voice-call/detect-ngrok');
+      const data = await res.json();
+      if (data.url) {
+        setVoicePublicUrl(data.url + '/voice/webhook');
+        setSaveSuccess(false);
+      } else {
+        setError(data.error || 'Could not detect ngrok tunnel. Is ngrok running?');
+      }
+    } catch {
+      setError('Failed to detect ngrok. Is ngrok running on this machine?');
+    } finally {
+      setVoiceDetectingNgrok(false);
     }
   };
 
@@ -628,29 +685,58 @@ export default function SettingsPage() {
           <div className="flex items-center gap-2 mb-4">
             <Phone className="w-5 h-5 text-mc-accent" />
             <h2 className="text-xl font-semibold text-mc-text">Voice Calls</h2>
+            {voiceProvider && (
+              <span className="ml-auto text-xs px-2 py-1 rounded bg-mc-accent/20 text-mc-accent capitalize">
+                {voiceProvider}
+              </span>
+            )}
           </div>
           <p className="text-sm text-mc-text-secondary mb-4">
-            Configure voice call settings for the OpenClaw voice-call plugin.
-            Requires the plugin to be installed: <code className="px-1 py-0.5 bg-mc-bg rounded text-xs">openclaw plugins install @openclaw/voice-call</code>
+            Configure voice call settings. Changes are saved to <code className="px-1 py-0.5 bg-mc-bg rounded text-xs">~/.openclaw/openclaw.json</code>.
+            Restart the gateway after saving for changes to take effect.
           </p>
 
           <div className="space-y-4">
             <div>
               <label className="block text-sm font-medium text-mc-text mb-2">
-                Default From Number
+                Webhook URL (ngrok / public URL)
+              </label>
+              <div className="flex gap-2">
+                <input
+                  type="url"
+                  value={voicePublicUrl}
+                  onChange={(e) => setVoicePublicUrl(e.target.value)}
+                  placeholder="https://xxxx.ngrok-free.app/voice/webhook"
+                  className="flex-1 px-4 py-2 bg-mc-bg border border-mc-border rounded text-mc-text focus:border-mc-accent focus:outline-none font-mono text-sm"
+                />
+                <button
+                  onClick={handleDetectNgrok}
+                  disabled={voiceDetectingNgrok}
+                  className="px-3 py-2 border border-mc-border rounded hover:bg-mc-bg-tertiary text-mc-text-secondary text-sm whitespace-nowrap disabled:opacity-50"
+                  title="Auto-detect ngrok tunnel URL"
+                >
+                  {voiceDetectingNgrok ? 'Detecting...' : 'Detect ngrok'}
+                </button>
+              </div>
+              <p className="text-xs text-mc-text-secondary mt-1">
+                Public URL for Twilio/Telnyx webhooks. Required for voice calls to work.
+                Start ngrok with <code className="px-1 py-0.5 bg-mc-bg rounded">ngrok http 3334</code> then click &quot;Detect ngrok&quot;.
+              </p>
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium text-mc-text mb-2">
+                From Number
               </label>
               <input
                 type="tel"
                 value={voiceDefaultNumber}
-                onChange={(e) => {
-                  setVoiceDefaultNumber(e.target.value);
-                  localStorage.setItem('mc-voice-default-number', e.target.value);
-                }}
+                onChange={(e) => setVoiceDefaultNumber(e.target.value)}
                 placeholder="+1 555 000 1234"
                 className="w-full px-4 py-2 bg-mc-bg border border-mc-border rounded text-mc-text focus:border-mc-accent focus:outline-none"
               />
               <p className="text-xs text-mc-text-secondary mt-1">
-                Default outbound phone number. Set in your OpenClaw voice-call plugin config.
+                Your Twilio/Telnyx phone number in E.164 format.
               </p>
             </div>
 
@@ -660,20 +746,42 @@ export default function SettingsPage() {
               </label>
               <select
                 value={voiceInboundPolicy}
-                onChange={(e) => {
-                  setVoiceInboundPolicy(e.target.value);
-                  localStorage.setItem('mc-voice-inbound-policy', e.target.value);
-                }}
+                onChange={(e) => setVoiceInboundPolicy(e.target.value)}
                 className="w-full px-4 py-2 bg-mc-bg border border-mc-border rounded text-mc-text focus:border-mc-accent focus:outline-none"
               >
-                <option value="block">Block all inbound calls</option>
-                <option value="allowlist">Allowlist only (configured in plugin)</option>
+                <option value="disabled">Block all inbound calls</option>
+                <option value="allowlist">Allowlist only</option>
                 <option value="open">Accept all inbound calls</option>
               </select>
               <p className="text-xs text-mc-text-secondary mt-1">
-                Controls who can call your agents. Configure the allowlist in your OpenClaw voice-call plugin config.
+                Controls who can call your agents. Configure the allowlist in your openclaw.json.
               </p>
             </div>
+
+            <div>
+              <label className="block text-sm font-medium text-mc-text mb-2">
+                Inbound Greeting
+              </label>
+              <input
+                type="text"
+                value={voiceInboundGreeting}
+                onChange={(e) => setVoiceInboundGreeting(e.target.value)}
+                placeholder="Hello! How can I help you today?"
+                className="w-full px-4 py-2 bg-mc-bg border border-mc-border rounded text-mc-text focus:border-mc-accent focus:outline-none"
+              />
+              <p className="text-xs text-mc-text-secondary mt-1">
+                Message spoken when someone calls your agent.
+              </p>
+            </div>
+
+            <button
+              onClick={handleVoiceSave}
+              disabled={voiceSaving}
+              className="px-4 py-2 bg-mc-accent text-mc-bg rounded hover:bg-mc-accent/90 flex items-center gap-2 disabled:opacity-50 text-sm"
+            >
+              <Save className="w-4 h-4" />
+              {voiceSaving ? 'Saving...' : 'Save Voice Settings'}
+            </button>
           </div>
         </section>
 

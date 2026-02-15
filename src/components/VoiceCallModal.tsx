@@ -22,6 +22,7 @@ export function VoiceCallModal({ isOpen, onClose, prefillAgentId }: VoiceCallMod
   const [phoneNumber, setPhoneNumber] = useState('');
   const [agentId, setAgentId] = useState(prefillAgentId || '');
   const [message, setMessage] = useState('');
+  const [callMode, setCallMode] = useState<'conversation' | 'notify'>('conversation');
   const [speakInput, setSpeakInput] = useState('');
   const [transcript, setTranscript] = useState('');
   const [durationSeconds, setDurationSeconds] = useState(0);
@@ -103,6 +104,7 @@ export function VoiceCallModal({ isOpen, onClose, prefillAgentId }: VoiceCallMod
           agentId: agentId || undefined,
           phoneNumber: phoneNumber.trim(),
           message: message.trim(),
+          mode: callMode,
         }),
       });
 
@@ -237,6 +239,36 @@ export function VoiceCallModal({ isOpen, onClose, prefillAgentId }: VoiceCallMod
                     </option>
                   ))}
                 </select>
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-mc-text mb-1">Call Mode</label>
+                <div className="flex gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setCallMode('conversation')}
+                    className={`flex-1 px-3 py-2 rounded border text-sm font-medium transition-colors ${
+                      callMode === 'conversation'
+                        ? 'bg-mc-accent text-mc-bg border-mc-accent'
+                        : 'bg-mc-bg border-mc-border text-mc-text-secondary hover:border-mc-accent'
+                    }`}
+                  >
+                    Conversation
+                    <span className="block text-xs font-normal mt-0.5 opacity-75">Two-way talk</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setCallMode('notify')}
+                    className={`flex-1 px-3 py-2 rounded border text-sm font-medium transition-colors ${
+                      callMode === 'notify'
+                        ? 'bg-mc-accent text-mc-bg border-mc-accent'
+                        : 'bg-mc-bg border-mc-border text-mc-text-secondary hover:border-mc-accent'
+                    }`}
+                  >
+                    Notify
+                    <span className="block text-xs font-normal mt-0.5 opacity-75">Speak &amp; hang up</span>
+                  </button>
+                </div>
               </div>
 
               <div>

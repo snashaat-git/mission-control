@@ -7,7 +7,7 @@ import type { VoiceCall } from '@/lib/types';
 
 export async function POST(request: NextRequest) {
   try {
-    const { agentId, phoneNumber, message } = await request.json();
+    const { agentId, phoneNumber, message, mode } = await request.json();
 
     if (!phoneNumber || !message) {
       return NextResponse.json(
@@ -25,6 +25,7 @@ export async function POST(request: NextRequest) {
     const result = await client.initiateCall({
       message,
       to: phoneNumber,
+      mode: mode || 'conversation',
     });
 
     console.log('[VoiceCall] Gateway response:', JSON.stringify(result));
